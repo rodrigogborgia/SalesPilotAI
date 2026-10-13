@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import { authService } from './auth.service';
+import { authMiddleware } from '../../shared/middleware/authMiddleware';
 
 export const authRoutes = Router();
 
@@ -34,29 +35,6 @@ authRoutes.post('/login', async (req, res, next) => {
   }
 });
 
-authRoutes.get('/me', (req, res, next) => {
-  const authorization = req.header('authorization');
-  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
-
-  if (!token) {
-    res.status(401).json({ message: 'Autenticación requerida.' });
-    return;
-  }
-
-  try {
-    const payload = authService.verifyToken(token);
-
-    if (!payload) {
-      res.status(401).json({ message: 'Token inválido o vencido.' });
-      return;
-    }
-
-    res.status(200).json({
-      id: payload.sub,
-      organizationId: payload.organizationId,
-      role: payload.role
-    });
-  } catch (error) {
-    next(error);
-  }
+authRoutes.get('/me', authMiddleware, (req, res) => {
+  res.status(200).json(req.auth);
 });

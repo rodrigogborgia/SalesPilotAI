@@ -8,6 +8,12 @@ import { customersRoutes } from './modules/customers/customers.routes';
 import { productsRoutes } from './modules/products/products.routes';
 import { copilotRoutes } from './modules/copilot/copilot.routes';
 import { analyticsRoutes } from './modules/analytics/analytics.routes';
+import { ticketsRoutes } from './modules/tickets/tickets.routes';
+import {
+  authMiddleware,
+  internalPanelAccess,
+  ticketAccess
+} from './shared/middleware/authMiddleware';
 
 const app = express();
 
@@ -23,11 +29,12 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/organizations', organizationsRoutes);
-app.use('/api/customers', customersRoutes);
-app.use('/api/products', productsRoutes);
-app.use('/api/copilot', copilotRoutes);
-app.use('/api/analytics', analyticsRoutes);
+app.use('/api/organizations', authMiddleware, internalPanelAccess, organizationsRoutes);
+app.use('/api/customers', authMiddleware, internalPanelAccess, customersRoutes);
+app.use('/api/products', authMiddleware, internalPanelAccess, productsRoutes);
+app.use('/api/copilot', authMiddleware, internalPanelAccess, copilotRoutes);
+app.use('/api/analytics', authMiddleware, internalPanelAccess, analyticsRoutes);
+app.use('/api/portal/tickets', authMiddleware, ticketAccess, ticketsRoutes);
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   console.error('API request failed:', error);

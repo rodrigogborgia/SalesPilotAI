@@ -58,6 +58,16 @@
 - cost_price: DECIMAL(12,2) NULL
 - is_active: BOOLEAN default true
 - created_at, updated_at
+- technical_documents: relación 1:N con `technical_documents`
+
+#### technical_documents
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- product_id: UUID FK -> products.id
+- title: VARCHAR(255)
+- document_type: ENUM (`MANUAL`, `SCHEMA`, `DATASHEET`)
+- file_url: TEXT
+- created_at: TIMESTAMPTZ
 
 #### customers
 - id: UUID PK
@@ -78,6 +88,8 @@
 - organization_id: UUID FK -> organizations.id
 - customer_id: UUID FK -> customers.id
 - serial_number: VARCHAR(120) UNIQUE
+- qr_token: VARCHAR(36) UNIQUE, generado como UUID
+- location_in_plant: TEXT NULL
 - product_id: UUID FK -> products.id
 - model: VARCHAR(180)
 - installation_date: TIMESTAMPTZ
@@ -96,6 +108,15 @@
 - interval_hours: INTEGER
 - next_due_hours: INTEGER
 - status: VARCHAR(30) default 'active'
+- created_at, updated_at
+
+#### support_tickets
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- installed_equipment_id: UUID FK -> installed_equipment.id
+- symptoms: TEXT
+- photos: TEXT[] default '{}'
+- status: ENUM (`RECEIVED`, `DIAGNOSING`, `SCHEDULED`, `REPAIRING`, `RESOLVED`)
 - created_at, updated_at
 
 #### conversations
@@ -426,6 +447,7 @@ model Product {
   updatedAt     DateTime @updatedAt
 
   installedEquipment InstalledEquipment[]
+  technicalDocuments TechnicalDocument[]
   opportunities     Opportunity[]
 }
 
@@ -460,6 +482,8 @@ model InstalledEquipment {
   productId       String
   product         Product @relation(fields: [productId], references: [id])
   serialNumber    String @unique
+  qrToken            String @unique @default(uuid())
+  locationInPlant    String?
   model           String
   installationDate DateTime
   currentHours    Decimal @default("0")
@@ -471,6 +495,32 @@ model InstalledEquipment {
   updatedAt       DateTime @updatedAt
 
   maintenancePlans MaintenancePlan[]
+  supportTickets     SupportTicket[]
+}
+
+model TechnicalDocument {
+  id             String                @id @default(uuid())
+  organizationId String
+  organization   Organization          @relation(fields: [organizationId], references: [id])
+  productId      String
+  product        Product               @relation(fields: [productId], references: [id])
+  title          String
+  documentType   TechnicalDocumentType
+  fileUrl        String
+  createdAt      DateTime              @default(now())
+}
+
+model SupportTicket {
+  id                   String              @id @default(uuid())
+  organizationId       String
+  organization         Organization        @relation(fields: [organizationId], references: [id])
+  installedEquipmentId String
+  installedEquipment  InstalledEquipment  @relation(fields: [installedEquipmentId], references: [id])
+  symptoms             String
+  photos               String[]            @default([])
+  status               SupportTicketStatus @default(RECEIVED)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 }
 
 model MaintenancePlan {

@@ -12,6 +12,7 @@ enum UserRole {
   ADMIN
   SALES
   SUPPORT
+  CLIENT_OPERATOR
 }
 
 enum ChannelType {
@@ -20,6 +21,20 @@ enum ChannelType {
   EMAIL
   PHONE
   OTHER
+}
+
+enum TechnicalDocumentType {
+  MANUAL
+  SCHEMA
+  DATASHEET
+}
+
+enum SupportTicketStatus {
+  RECEIVED
+  DIAGNOSING
+  SCHEDULED
+  REPAIRING
+  RESOLVED
 }
 
 enum ConversationDirection {
@@ -49,6 +64,8 @@ model Organization {
   categories         Category[]
   products           Product[]
   customers          Customer[]
+  supportTickets     SupportTicket[]
+  technicalDocuments TechnicalDocument[]
   installedEquipment InstalledEquipment[]
   maintenancePlans   MaintenancePlan[]
   conversations      Conversation[]
@@ -126,6 +143,7 @@ model Product {
   updatedAt   DateTime @updatedAt
 
   installedEquipment InstalledEquipment[]
+  technicalDocuments TechnicalDocument[]
   opportunities      Opportunity[]
 
   @@unique([organizationId, sku])
@@ -169,6 +187,8 @@ model InstalledEquipment {
   product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   serialNumber     String    @unique
+  qrToken          String    @unique @default(uuid())
+  locationInPlant  String?
   model            String
   installationDate DateTime
   currentHours     Decimal   @default("0.00") @db.Decimal(10, 2)
@@ -180,8 +200,40 @@ model InstalledEquipment {
   updatedAt        DateTime  @updatedAt
 
   maintenancePlans MaintenancePlan[]
+  supportTickets   SupportTicket[]
 
   @@index([organizationId, customerId])
+}
+
+model TechnicalDocument {
+  id             String                @id @default(uuid())
+  organizationId String
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  title          String
+  documentType   TechnicalDocumentType
+  fileUrl        String
+  createdAt      DateTime              @default(now())
+
+  @@index([organizationId, productId])
+  @@index([productId, documentType])
+}
+
+model SupportTicket {
+  id                   String              @id @default(uuid())
+  organizationId       String
+  organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  installedEquipmentId String
+  installedEquipment   InstalledEquipment  @relation(fields: [installedEquipmentId], references: [id], onDelete: Restrict)
+  symptoms             String
+  photos               String[]            @default([])
+  status               SupportTicketStatus @default(RECEIVED)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, installedEquipmentId])
 }
 
 model MaintenancePlan {
