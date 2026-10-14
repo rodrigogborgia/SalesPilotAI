@@ -21,15 +21,18 @@ El seed es idempotente y crea:
 - Organización `Pro-Aire Industrial` (`pro-aire-industrial`).
 - Javier con rol `OWNER`.
 - David con rol `SALES`.
-- Categorías Compresores, Tratamiento de aire, Repuestos y mantenimiento.
-- Tres productos base de Pro-Aire. Sus precios quedan sin definir y se mantienen nulos hasta cargar una lista comercial real.
+- Operador de Taller Rosario S.A. con rol `CLIENT_OPERATOR`.
+- Categorías Compresores, Tratamiento de aire, Repuestos y mantenimiento, Tuberías y conexiones, y Servicios.
+- Los 64 productos visibles en el [catálogo Pro-Aire](https://www.pro-aire.ar/productos/) al 14/10/2026, además del Compresor PA 132 (SKU `PA-132`). Los SKU del catálogo son sus identificadores de URL; los precios quedan nulos para evitar fijar valores comerciales desactualizables.
+- Los tres productos genéricos del seed anterior quedan inactivos (no se eliminan) para conservar cualquier relación histórica.
+- El equipo instalado PA 132 (`PA-000125`) de Taller Rosario S.A., con 4.280 hs y mantenimiento preventivo a las 4.500 hs.
 
-Configurar `apps/api/.env` a partir de `.env.example`, incluyendo:
+Configurar `apps/api/.env` a partir de `.env.example` con PostgreSQL local para la demostración, incluyendo:
 
-- `DATABASE_URL`: URL de PostgreSQL nativo o Supabase.
+- `DATABASE_URL`: URL de PostgreSQL nativo local.
 - `JWT_SECRET`: secreto aleatorio de al menos 32 caracteres.
-- `SEED_OWNER_PASSWORD` y `SEED_SALES_PASSWORD`: contraseñas individuales iniciales; nunca se guardan en el seed ni en el repositorio.
-- `SEED_OWNER_EMAIL` y `SEED_SALES_EMAIL` son opcionales, con defaults `javier@pro-aire.com` y `david@pro-aire.com`.
+- `SEED_OWNER_PASSWORD`, `SEED_SALES_PASSWORD` y `SEED_CLIENT_PASSWORD`: contraseñas individuales iniciales; nunca se guardan en el seed ni en el repositorio.
+- `SEED_OWNER_EMAIL`, `SEED_SALES_EMAIL` y `SEED_CLIENT_EMAIL` son opcionales. Sus defaults son `javier@pro-aire.com`, `david@pro-aire.com` y `operador@tallerrosario.com`.
 
 Desde la raíz del monorepo:
 
@@ -40,7 +43,9 @@ npm --workspace apps/api run prisma:migrate -- --name init
 npm --workspace apps/api run prisma:seed
 ```
 
-El seed exige ambos passwords y falla sin crear/actualizar registros cuando falta alguno.
+El seed exige las tres contraseñas y falla sin crear/actualizar registros cuando falta alguna.
+
+Para la demo local, entra a `/portal` con el usuario cliente o a `/simulator` con David. El simulador responde localmente y usa la API local para crear y resolver referencias; no requiere integraciones externas.
 
 ## Autenticación
 
@@ -55,7 +60,7 @@ El seed exige ambos passwords y falla sin crear/actualizar registros cuando falt
 | Superficie | Roles autorizados | Alcance |
 | --- | --- | --- |
 | CRM/API interna: `/api/organizations`, `/api/customers`, `/api/products`, `/api/copilot`, `/api/analytics` | `OWNER`, `ADMIN`, `SALES` | Panel y operaciones internas; `CLIENT_OPERATOR` recibe 403. |
-| Portal Mi Planta: `/api/portal/tickets` | `OWNER`, `ADMIN`, `SALES`, `SUPPORT`, `CLIENT_OPERATOR` | Listar/consultar y crear tickets. Todas las lecturas y altas quedan filtradas por `organizationId` del contexto. |
+| Portal Mi Planta: `/api/portal/tickets` | `OWNER`, `ADMIN`, `SALES`, `SUPPORT`, `CLIENT_OPERATOR` | Consultar equipo y tickets, y crear tickets. Las operaciones quedan filtradas por `organizationId`; para `CLIENT_OPERATOR`, también por el email asociado al cliente. |
 | Salud: `/api/health` | Público | Estado del proceso, sin datos de tenant. |
 
-El portal expone únicamente `GET /api/portal/tickets`, `GET /api/portal/tickets/:ticketId` y `POST /api/portal/tickets`. La creación solo acepta equipo instalado, síntomas y fotos; ignora cualquier `organizationId` enviado por el navegador y verifica que el equipo pertenezca a la organización autenticada. No expone endpoints para cambiar estados o modificar/eliminar tickets a `CLIENT_OPERATOR`.
+El portal expone `GET /api/portal/tickets/equipment`, `GET /api/portal/tickets`, `GET /api/portal/tickets/:ticketId` y `POST /api/portal/tickets`. Para `CLIENT_OPERATOR`, los equipos y tickets solo corresponden al cliente cuyo email coincide con el de su cuenta. La creación solo acepta equipo instalado, síntomas y fotos; ignora cualquier `organizationId` enviado por el navegador y verifica la pertenencia del equipo al cliente autenticado. No expone endpoints para cambiar estados o modificar/eliminar tickets a `CLIENT_OPERATOR`.

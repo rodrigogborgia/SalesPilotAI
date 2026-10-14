@@ -21,9 +21,11 @@ npm run dev:web
 ```
 
 El frontend queda disponible en http://localhost:3000 y la API en http://localhost:4000.
-Configura `apps/api/.env` con `DATABASE_URL`, `JWT_SECRET` y las dos contraseñas iniciales
-(`SEED_OWNER_PASSWORD` y `SEED_SALES_PASSWORD`) antes de migrar y ejecutar el seed. No
+Configura `apps/api/.env` con `DATABASE_URL`, `JWT_SECRET` y las tres contraseñas iniciales
+(`SEED_OWNER_PASSWORD`, `SEED_SALES_PASSWORD` y `SEED_CLIENT_PASSWORD`) antes de migrar y ejecutar el seed. No
 guardes credenciales reales en el repositorio.
+
+Para la demo compartida, inicia PostgreSQL local, levanta API y web en localhost y ejecuta el seed. Las pantallas `/portal` y `/simulator` no dependen de servicios externos.
 
 ## Estructura
 

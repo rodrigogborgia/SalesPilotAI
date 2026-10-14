@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 export type CopilotReferenceInput = {
   conversationId: string;
   customerId?: string;
@@ -25,7 +27,7 @@ export const copilotService = {
 
   async createReference(input: CopilotReferenceInput) {
     return {
-      id: 'ref-new',
+      id: randomUUID(),
       ...input,
       organizationId: 'demo-org',
       resolved: false,

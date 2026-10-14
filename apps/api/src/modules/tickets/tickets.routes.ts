@@ -4,9 +4,23 @@ import { ticketsService } from './tickets.service';
 
 export const ticketsRoutes = Router();
 
+ticketsRoutes.get('/equipment', async (req, res, next) => {
+  try {
+    const equipment = await ticketsService.listEquipment(
+      req.auth!.organizationId,
+      req.auth!.role === 'CLIENT_OPERATOR' ? req.auth!.email : undefined
+    );
+    res.status(200).json(equipment);
+  } catch (error) {
+    next(error);
+  }
+});
+
 ticketsRoutes.get('/', async (req, res, next) => {
   try {
-    const tickets = await ticketsService.list(req.auth!.organizationId);
+    const clientEmail =
+      req.auth!.role === 'CLIENT_OPERATOR' ? req.auth!.email : undefined;
+    const tickets = await ticketsService.list(req.auth!.organizationId, clientEmail);
     res.status(200).json(tickets);
   } catch (error) {
     next(error);
@@ -17,7 +31,8 @@ ticketsRoutes.get('/:ticketId', async (req, res, next) => {
   try {
     const ticket = await ticketsService.findById(
       req.auth!.organizationId,
-      req.params.ticketId
+      req.params.ticketId,
+      req.auth!.role === 'CLIENT_OPERATOR' ? req.auth!.email : undefined
     );
 
     if (!ticket) {
@@ -54,11 +69,15 @@ ticketsRoutes.post('/', async (req, res, next) => {
   }
 
   try {
-    const ticket = await ticketsService.create(req.auth!.organizationId, {
-      installedEquipmentId: body.installedEquipmentId.trim(),
-      symptoms: body.symptoms,
-      photos: (body.photos as string[] | undefined) ?? []
-    });
+    const ticket = await ticketsService.create(
+      req.auth!.organizationId,
+      {
+        installedEquipmentId: body.installedEquipmentId.trim(),
+        symptoms: body.symptoms,
+        photos: (body.photos as string[] | undefined) ?? []
+      },
+      req.auth!.role === 'CLIENT_OPERATOR' ? req.auth!.email : undefined
+    );
 
     if (!ticket) {
       res.status(404).json({ message: 'Equipo instalado no encontrado.' });

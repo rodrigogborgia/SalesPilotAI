@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 const modules = [
   'Inbound comercial y venta consultiva',
   'CRM y pipeline',
@@ -43,6 +45,19 @@ export default function HomePage() {
             mantenimientos y dashboards de rendimiento por canal y distribuidor.
           </p>
         </div>
+      </section>
+
+      <section className="grid">
+        <Link href="/portal" className="card block transition hover:-translate-y-0.5 hover:shadow-lg">
+          <h3>Mi Planta</h3>
+          <p>Portal de Taller Rosario S.A. para consultar el Compresor PA 132 y solicitar servicio.</p>
+          <span className="mt-4 inline-block text-sm font-semibold text-blue-600">Abrir portal →</span>
+        </Link>
+        <Link href="/simulator" className="card block transition hover:-translate-y-0.5 hover:shadow-lg">
+          <h3>Simulador Comercial</h3>
+          <p>Prueba la conversación con el asistente de Pro-Aire y recibe derivaciones en la consola de David.</p>
+          <span className="mt-4 inline-block text-sm font-semibold text-blue-600">Abrir simulador →</span>
+        </Link>
       </section>
     </main>
   );

@@ -39,7 +39,8 @@ export default function LoginPage() {
 
       window.localStorage.setItem('salespilot_token', result.token);
       window.localStorage.setItem('salespilot_user', JSON.stringify(result.user));
-      window.location.assign('/');
+      const nextPath = new URLSearchParams(window.location.search).get('next');
+      window.location.assign(nextPath?.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/');
     } catch {
       setError('No se pudo conectar con SalesPilotAI. Intenta nuevamente en unos minutos.');
     } finally {

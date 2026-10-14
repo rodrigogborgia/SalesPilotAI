@@ -9,9 +9,32 @@ export type CreateTicketInput = {
 };
 
 export const ticketsService = {
-  list(organizationId: string) {
+  listEquipment(organizationId: string, clientEmail?: string) {
+    return prisma.installedEquipment.findMany({
+      where: {
+        organizationId,
+        ...(clientEmail ? { customer: { email: clientEmail } } : {})
+      },
+      include: {
+        product: { select: { name: true, sku: true } },
+        customer: { select: { companyName: true } },
+        maintenancePlans: {
+          where: { status: 'active' },
+          orderBy: { nextDueHours: 'asc' }
+        }
+      },
+      orderBy: { model: 'asc' }
+    });
+  },
+
+  list(organizationId: string, clientEmail?: string) {
     return prisma.supportTicket.findMany({
-      where: { organizationId },
+      where: {
+        organizationId,
+        ...(clientEmail
+          ? { installedEquipment: { customer: { email: clientEmail } } }
+          : {})
+      },
       include: {
         installedEquipment: {
           select: {
@@ -26,11 +49,14 @@ export const ticketsService = {
     });
   },
 
-  findById(organizationId: string, ticketId: string) {
+  findById(organizationId: string, ticketId: string, clientEmail?: string) {
     return prisma.supportTicket.findFirst({
       where: {
         id: ticketId,
-        organizationId
+        organizationId,
+        ...(clientEmail
+          ? { installedEquipment: { customer: { email: clientEmail } } }
+          : {})
       },
       include: {
         installedEquipment: {
@@ -45,11 +71,12 @@ export const ticketsService = {
     });
   },
 
-  async create(organizationId: string, input: CreateTicketInput) {
+  async create(organizationId: string, input: CreateTicketInput, clientEmail?: string) {
     const equipment = await prisma.installedEquipment.findFirst({
       where: {
         id: input.installedEquipmentId,
-        organizationId
+        organizationId,
+        ...(clientEmail ? { customer: { email: clientEmail } } : {})
       },
       select: { id: true }
     });
@@ -65,6 +92,14 @@ export const ticketsService = {
         symptoms: input.symptoms.trim(),
         photos: input.photos,
         status: SupportTicketStatus.RECEIVED
+      },
+      include: {
+        installedEquipment: {
+          select: {
+            model: true,
+            serialNumber: true
+          }
+        }
       }
     });
   }

@@ -26,6 +26,7 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
       select: {
         id: true,
         organizationId: true,
+        email: true,
         role: true,
         status: true
       }
@@ -39,6 +40,7 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
     req.auth = {
       userId: user.id,
       organizationId: user.organizationId,
+      email: user.email,
       role: user.role
     };
     next();
