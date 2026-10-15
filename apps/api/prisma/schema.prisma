@@ -3,50 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-enum UserRole {
-  OWNER
-  ADMIN
-  SALES
-  SUPPORT
-  CLIENT_OPERATOR
-}
-
-enum ChannelType {
-  WHATSAPP
-  INSTAGRAM
-  EMAIL
-  PHONE
-  OTHER
-}
-
-enum TechnicalDocumentType {
-  MANUAL
-  SCHEMA
-  DATASHEET
-}
-
-enum SupportTicketStatus {
-  RECEIVED
-  DIAGNOSING
-  SCHEDULED
-  REPAIRING
-  RESOLVED
-}
-
-enum ConversationDirection {
-  INBOUND
-  OUTBOUND
-}
-
-enum AuditSeverity {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model Organization {
@@ -56,7 +14,7 @@ model Organization {
   brandName String?
   logoUrl   String?
   status    String   @default("active")
-  settings  Json     @default("{}")
+  settings  Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -87,7 +45,7 @@ model User {
   lastName     String?
   email        String    @unique
   phone        String?
-  role         UserRole  @default(SALES)
+  role         String    @default("SALES")
   status       String    @default("active")
   avatarUrl    String?
   passwordHash String?
@@ -136,8 +94,8 @@ model Product {
   sku         String
   name        String
   description String?
-  price       Decimal? @db.Decimal(12, 2)
-  costPrice   Decimal? @db.Decimal(12, 2)
+  price       Decimal?
+  costPrice   Decimal?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -191,8 +149,8 @@ model InstalledEquipment {
   locationInPlant  String?
   model            String
   installationDate DateTime
-  currentHours     Decimal   @default("0.00") @db.Decimal(10, 2)
-  avgHoursPerDay   Decimal   @default("0.00") @db.Decimal(10, 2)
+  currentHours     Decimal   @default("0.00")
+  avgHoursPerDay   Decimal   @default("0.00")
   warrantyEndDate  DateTime?
   status           String    @default("active")
   notes            String?
@@ -212,7 +170,7 @@ model TechnicalDocument {
   productId      String
   product        Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
   title          String
-  documentType   TechnicalDocumentType
+  documentType   String
   fileUrl        String
   createdAt      DateTime              @default(now())
 
@@ -227,8 +185,8 @@ model SupportTicket {
   installedEquipmentId String
   installedEquipment   InstalledEquipment  @relation(fields: [installedEquipmentId], references: [id], onDelete: Restrict)
   symptoms             String
-  photos               String[]            @default([])
-  status               SupportTicketStatus @default(RECEIVED)
+  photos               Json
+  status               String              @default("RECEIVED")
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
 
@@ -297,7 +255,7 @@ model Opportunity {
   salesOwnerUser   User?   @relation("SalesOwner", fields: [salesOwnerUserId], references: [id])
 
   stage             String    @default("new")
-  amount            Decimal   @default("0.00") @db.Decimal(12, 2)
+  amount            Decimal   @default("0.00")
   expectedCloseDate DateTime?
   probability       Int       @default(0)
   notes             String?
@@ -317,12 +275,12 @@ model Conversation {
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
 
-  contactChannel     ChannelType           @default(WHATSAPP)
+  contactChannel     String                @default("WHATSAPP")
   channelRef         String?
   threadId           String?
   senderName         String?
   senderPhone        String?
-  direction          ConversationDirection @default(INBOUND)
+  direction          String                @default("INBOUND")
   content            String?
   summary            String?
   requiresDerivation Boolean               @default(false)
@@ -352,7 +310,7 @@ model CopilotReference {
   assignedToUserId String?
   assignedToUser   User?   @relation(fields: [assignedToUserId], references: [id])
 
-  sourceChannel      ChannelType
+  sourceChannel      String
   summary            String?
   resolved           Boolean     @default(false)
   resolvedAt         DateTime?
@@ -375,10 +333,10 @@ model ConversationAudit {
   userId String?
   user   User?   @relation(fields: [userId], references: [id])
 
-  severity         AuditSeverity @default(MEDIUM)
+  severity         String        @default("MEDIUM")
   objectiveSummary String?
   sentiment        String?
-  objections       String[]
+  objections       Json
   insights         Json?
   recommendations  Json?
   createdAt        DateTime      @default(now())

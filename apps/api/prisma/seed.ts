@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { hash } from 'bcryptjs';
-import { PrismaClient, UserRole } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+
+import { UserRole } from '../src/shared/domainEnums';
 
 const prisma = new PrismaClient();
 
@@ -38,12 +40,14 @@ async function main() {
       where: { slug: 'pro-aire-industrial' },
       update: {
         name: 'Pro-Aire Industrial',
-        brandName: 'Pro-Aire'
+        brandName: 'Pro-Aire',
+        settings: {}
       },
       create: {
         name: 'Pro-Aire Industrial',
         slug: 'pro-aire-industrial',
-        brandName: 'Pro-Aire'
+        brandName: 'Pro-Aire',
+        settings: {}
       }
     });
 

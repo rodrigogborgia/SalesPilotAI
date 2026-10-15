@@ -1,6 +1,5 @@
-import { SupportTicketStatus } from '@prisma/client';
-
 import prisma from '../../lib/prisma';
+import { SupportTicketStatus } from '../../shared/domainEnums';
 
 export type CreateTicketInput = {
   installedEquipmentId: string;

@@ -9,7 +9,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "db:setup": "prisma db push && prisma db seed"
   },
   "dependencies": {
     "@prisma/client": "^6.0.0",

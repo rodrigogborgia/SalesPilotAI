@@ -1,5 +1,9 @@
 **/node_modules/
 **/.next/
+**/dev.db
+**/dev.db-journal
+**/dev.db-shm
+**/dev.db-wal
 .DS_Store
 out
 coverage

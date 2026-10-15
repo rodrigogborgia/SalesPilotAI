@@ -1,8 +1,8 @@
-import { UserRole } from '@prisma/client';
 import { RequestHandler } from 'express';
 
 import prisma from '../../lib/prisma';
 import { authService } from '../../modules/auth/auth.service';
+import { isUserRole, UserRole } from '../domainEnums';
 
 export const authMiddleware: RequestHandler = async (req, res, next) => {
   const authorization = req.header('authorization');
@@ -32,7 +32,7 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
       }
     });
 
-    if (!user || user.status !== 'active') {
+    if (!user || user.status !== 'active' || !isUserRole(user.role)) {
       res.status(401).json({ message: 'La sesión ya no está activa.' });
       return;
     }

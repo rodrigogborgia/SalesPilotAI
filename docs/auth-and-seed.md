@@ -2,7 +2,7 @@
 
 ## Roles
 
-Los roles son el enum `UserRole` del schema Prisma:
+Los roles válidos se definen como constantes `UserRole` en `apps/api/src/shared/domainEnums.ts` y se almacenan como strings en SQLite:
 
 | Rol | Permisos previstos |
 | --- | --- |
@@ -12,7 +12,7 @@ Los roles son el enum `UserRole` del schema Prisma:
 | `SUPPORT` | Acceso a clientes, conversaciones asignadas, equipos instalados y mantenimiento; sin administración del catálogo ni de usuarios. |
 | `CLIENT_OPERATOR` | Acceso limitado al portal de planta: consultar la ficha y documentación del equipo, y crear/consultar tickets de asistencia permitidos para su organización. |
 
-La enum fija los roles válidos; la autorización de cada endpoint debe aplicarse en middleware/RBAC antes de habilitar operaciones productivas.
+La lista fija los roles válidos; la autorización de cada endpoint se aplica mediante middleware/RBAC.
 
 ## Seed
 
@@ -27,9 +27,9 @@ El seed es idempotente y crea:
 - Los tres productos genéricos del seed anterior quedan inactivos (no se eliminan) para conservar cualquier relación histórica.
 - El equipo instalado PA 132 (`PA-000125`) de Taller Rosario S.A., con 4.280 hs y mantenimiento preventivo a las 4.500 hs.
 
-Configurar `apps/api/.env` a partir de `.env.example` con PostgreSQL local para la demostración, incluyendo:
+Configurar `apps/api/.env` a partir de `.env.example` para la demostración local, incluyendo:
 
-- `DATABASE_URL`: URL de PostgreSQL nativo local.
+- `DATABASE_URL`: `file:./dev.db` (SQLite local).
 - `JWT_SECRET`: secreto aleatorio de al menos 32 caracteres.
 - `SEED_OWNER_PASSWORD`, `SEED_SALES_PASSWORD` y `SEED_CLIENT_PASSWORD`: contraseñas individuales iniciales; nunca se guardan en el seed ni en el repositorio.
 - `SEED_OWNER_EMAIL`, `SEED_SALES_EMAIL` y `SEED_CLIENT_EMAIL` son opcionales. Sus defaults son `javier@pro-aire.com`, `david@pro-aire.com` y `operador@tallerrosario.com`.
@@ -39,11 +39,10 @@ Desde la raíz del monorepo:
 ```bash
 npm install
 npm --workspace apps/api run prisma:generate
-npm --workspace apps/api run prisma:migrate -- --name init
-npm --workspace apps/api run prisma:seed
+npm run db:setup
 ```
 
-El seed exige las tres contraseñas y falla sin crear/actualizar registros cuando falta alguna.
+`npm run db:setup` aplica el schema SQLite con `prisma db push` y luego corre el seed. El seed exige las tres contraseñas y falla sin crear/actualizar registros cuando falta alguna. `prisma/migrations` conserva el historial PostgreSQL anterior; el flujo local SQLite usa `db push`, no aplica esas migraciones PostgreSQL.
 
 Para la demo local, entra a `/portal` con el usuario cliente o a `/simulator` con David. El simulador responde localmente y usa la API local para crear y resolver referencias; no requiere integraciones externas.
 
@@ -55,7 +54,7 @@ Para la demo local, entra a `/portal` con el usuario cliente o a `/simulator` co
 
 ## Separación entre panel interno y Portal Mi Planta
 
-`authMiddleware` valida el JWT y vuelve a leer usuario, estado, organización y rol de PostgreSQL en cada petición protegida. La organización del contexto se toma de ese registro activo, nunca de un parámetro enviado por el cliente.
+`authMiddleware` valida el JWT y vuelve a leer usuario, estado, organización y rol de la base de datos en cada petición protegida. La organización del contexto se toma de ese registro activo, nunca de un parámetro enviado por el cliente.
 
 | Superficie | Roles autorizados | Alcance |
 | --- | --- | --- |

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { UserRole } from '@prisma/client';
 import { RequestHandler } from 'express';
 
 import {
@@ -8,6 +7,7 @@ import {
   requireRoles,
   ticketAccess
 } from '../src/shared/middleware/authMiddleware';
+import { UserRole } from '../src/shared/domainEnums';
 
 function invoke(
   middleware: RequestHandler,

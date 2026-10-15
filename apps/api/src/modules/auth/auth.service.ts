@@ -1,8 +1,8 @@
 import { compare } from 'bcryptjs';
-import { UserRole } from '@prisma/client';
 import jwt, { JsonWebTokenError, JwtPayload } from 'jsonwebtoken';
 
 import prisma from '../../lib/prisma';
+import { isUserRole, UserRole } from '../../shared/domainEnums';
 
 export type LoginInput = {
   email: string;
@@ -77,12 +77,17 @@ export const authService = {
         typeof payload === 'string' ||
         typeof payload.sub !== 'string' ||
         typeof payload.organizationId !== 'string' ||
-        !Object.values(UserRole).includes(payload.role as UserRole)
+        !isUserRole(payload.role)
       ) {
         return null;
       }
 
-      return payload as AccessTokenPayload;
+      return {
+        ...payload,
+        sub: payload.sub,
+        organizationId: payload.organizationId,
+        role: payload.role
+      };
     } catch (error) {
       if (error instanceof JsonWebTokenError) {
         return null;
