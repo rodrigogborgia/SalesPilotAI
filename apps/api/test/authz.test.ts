@@ -62,6 +62,20 @@ test('owners and sales users can access the internal panel', () => {
   }
 });
 
+test('only owners and admins can access admin routes', () => {
+  const adminAccess = requireRoles(UserRole.OWNER, UserRole.ADMIN);
+
+  for (const role of [UserRole.OWNER, UserRole.ADMIN]) {
+    const result = invoke(adminAccess, role);
+    assert.equal(result.statusCode, undefined);
+    assert.equal(result.nextCalled, true);
+  }
+
+  const salesResult = invoke(adminAccess, UserRole.SALES);
+  assert.equal(salesResult.statusCode, 403);
+  assert.equal(salesResult.nextCalled, false);
+});
+
 test('unauthenticated requests are rejected by role guards', () => {
   for (const guard of [internalPanelAccess, requireRoles(UserRole.CLIENT_OPERATOR)]) {
     const result = invoke(guard);

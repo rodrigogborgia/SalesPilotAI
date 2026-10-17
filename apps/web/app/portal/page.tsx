@@ -3,6 +3,8 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
+import ThemeToggle from '../../components/ThemeToggle';
+import DemoTour from '../../components/DemoTour';
 
 type Equipment = {
   id: string;
@@ -82,6 +84,7 @@ function formatStatus(status: string) {
 }
 
 export default function PlantPortalPage() {
+  const [mounted, setMounted] = useState(false);
   const [token, setToken] = useState('');
   const [equipment, setEquipment] = useState<Equipment | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -92,6 +95,7 @@ export default function PlantPortalPage() {
   const [ticketMessage, setTicketMessage] = useState('');
 
   useEffect(() => {
+    setMounted(true);
     const savedToken = window.localStorage.getItem('salespilot_token');
     if (!savedToken) {
       setIsLoading(false);
@@ -183,6 +187,8 @@ export default function PlantPortalPage() {
           </Link>
           <div className="flex items-center gap-4 text-sm">
             <span className="hidden text-slate-500 sm:inline">Taller Rosario S.A.</span>
+            <DemoTour />
+            <ThemeToggle />
             <Link href="/simulator" className="font-semibold text-[#1E64FF] hover:text-blue-700">Ver simulador</Link>
           </div>
         </div>
@@ -244,11 +250,11 @@ export default function PlantPortalPage() {
                       <div className="flex items-end justify-between gap-3">
                         <div>
                           <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Horómetro</p>
-                          <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight">{currentHours.toLocaleString('es-AR')} <span className="text-base font-semibold text-slate-500">hs</span></p>
+                          <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight">{mounted ? currentHours.toLocaleString('es-AR') : currentHours} <span className="text-base font-semibold text-slate-500">hs</span></p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-slate-500">Próximo mantenimiento</p>
-                          <p className="mt-1 font-semibold text-[#172033]">{remainingHours !== undefined ? `en ${remainingHours.toLocaleString('es-AR')} hs` : 'A coordinar'}</p>
+                          <p className="mt-1 font-semibold text-[#172033]">{remainingHours !== undefined ? `en ${mounted ? remainingHours.toLocaleString('es-AR') : remainingHours} hs` : 'A coordinar'}</p>
                         </div>
                       </div>
                       {remainingHours !== undefined && (
@@ -319,7 +325,7 @@ export default function PlantPortalPage() {
                 <section id="mantenimiento" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6">
                   <p className="text-xs font-bold uppercase tracking-[0.15em] text-amber-600">Plan preventivo</p>
                   <h2 className="mt-1 text-lg font-bold">Próximo mantenimiento</h2>
-                  <p className="mt-2 text-sm text-slate-600">{remainingHours !== undefined ? `A las ${nextMaintenance?.toLocaleString('es-AR')} hs de uso · faltan ${remainingHours.toLocaleString('es-AR')} hs.` : 'Sin mantenimiento programado.'}</p>
+                  <p className="mt-2 text-sm text-slate-600">{remainingHours !== undefined ? `A las ${mounted ? nextMaintenance?.toLocaleString('es-AR') : nextMaintenance} hs de uso · faltan ${mounted ? remainingHours.toLocaleString('es-AR') : remainingHours} hs.` : 'Sin mantenimiento programado.'}</p>
                 </section>
                 <section id="historial" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6">
                   <div className="flex items-center justify-between">
@@ -335,7 +341,7 @@ export default function PlantPortalPage() {
                         <li key={ticket.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
                           <div>
                             <p className="text-sm font-medium text-slate-800">{ticket.symptoms}</p>
-                            <p className="mt-1 text-xs text-slate-500">{new Date(ticket.createdAt).toLocaleDateString('es-AR')} · {ticket.installedEquipment.serialNumber}</p>
+                            <p className="mt-1 text-xs text-slate-500">{mounted ? new Date(ticket.createdAt).toLocaleDateString('es-AR') : '—'} · {ticket.installedEquipment.serialNumber}</p>
                           </div>
                           <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{formatStatus(ticket.status)}</span>
                         </li>

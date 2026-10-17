@@ -58,6 +58,16 @@ export default function HomePage() {
           <p>Prueba la conversación con el asistente de Pro-Aire y recibe derivaciones en la consola de David.</p>
           <span className="mt-4 inline-block text-sm font-semibold text-blue-600">Abrir simulador →</span>
         </Link>
+        <Link href="/dashboard" className="card block transition hover:-translate-y-0.5 hover:shadow-lg">
+          <h3>Dashboard Directivo</h3>
+          <p>Consulta presupuestos, minutas de voz, horómetros críticos y motivos de pérdida.</p>
+          <span className="mt-4 inline-block text-sm font-semibold text-blue-600">Abrir métricas →</span>
+        </Link>
+        <Link href="/admin" className="card block transition hover:-translate-y-0.5 hover:shadow-lg">
+          <h3>Meta Audiences & Growth</h3>
+          <p>Administra emails capturados, etiquetas de audiencia y exportación para campañas.</p>
+          <span className="mt-4 inline-block text-sm font-semibold text-blue-600">Abrir administración →</span>
+        </Link>
       </section>
     </main>
   );

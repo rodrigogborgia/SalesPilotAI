@@ -9,11 +9,16 @@ import { productsRoutes } from './modules/products/products.routes';
 import { copilotRoutes } from './modules/copilot/copilot.routes';
 import { analyticsRoutes } from './modules/analytics/analytics.routes';
 import { ticketsRoutes } from './modules/tickets/tickets.routes';
+import { budgetsRoutes } from './modules/budgets/budgets.routes';
+import { maintenanceRoutes } from './modules/maintenance/maintenance.routes';
+import { adminRoutes } from './modules/admin/admin.routes';
 import {
   authMiddleware,
   internalPanelAccess,
-  ticketAccess
+  ticketAccess,
+  requireRoles
 } from './shared/middleware/authMiddleware';
+import { UserRole } from './shared/domainEnums';
 
 const app = express();
 
@@ -35,6 +40,14 @@ app.use('/api/products', authMiddleware, internalPanelAccess, productsRoutes);
 app.use('/api/copilot', authMiddleware, internalPanelAccess, copilotRoutes);
 app.use('/api/analytics', authMiddleware, internalPanelAccess, analyticsRoutes);
 app.use('/api/portal/tickets', authMiddleware, ticketAccess, ticketsRoutes);
+app.use('/api/budgets', authMiddleware, internalPanelAccess, budgetsRoutes);
+app.use('/api/maintenance', authMiddleware, internalPanelAccess, maintenanceRoutes);
+app.use(
+  '/api/admin',
+  authMiddleware,
+  requireRoles(UserRole.OWNER, UserRole.ADMIN),
+  adminRoutes
+);
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   console.error('API request failed:', error);

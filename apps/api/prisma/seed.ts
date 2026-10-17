@@ -24,15 +24,19 @@ async function main() {
   const salesEmail = process.env.SEED_SALES_EMAIL?.trim().toLowerCase() || 'david@pro-aire.com';
   const clientEmail =
     process.env.SEED_CLIENT_EMAIL?.trim().toLowerCase() || 'operador@tallerrosario.com';
+  const lucianaEmail =
+    process.env.SEED_LUCIANA_EMAIL?.trim().toLowerCase() || 'luciana@pro-aire.com';
+  const demoEmail = 'demo@pro-aire.com';
 
-  if (new Set([ownerEmail, salesEmail, clientEmail]).size !== 3) {
+  if (new Set([ownerEmail, salesEmail, clientEmail, lucianaEmail, demoEmail]).size !== 5) {
     throw new Error('Seed user email addresses must be different.');
   }
 
-  const [ownerPasswordHash, salesPasswordHash, clientPasswordHash] = await Promise.all([
+  const [ownerPasswordHash, salesPasswordHash, clientPasswordHash, demoPasswordHash] = await Promise.all([
     hash(ownerPassword, 12),
     hash(salesPassword, 12),
-    hash(clientPassword, 12)
+    hash(clientPassword, 12),
+    hash('demo123', 12)
   ]);
 
   await prisma.$transaction(async (tx) => {
@@ -71,6 +75,26 @@ async function main() {
     });
 
     await tx.user.upsert({
+      where: { email: demoEmail },
+      update: {
+        organizationId: organization.id,
+        firstName: 'Demo',
+        lastName: 'Pro-Aire',
+        role: UserRole.OWNER,
+        status: 'active',
+        passwordHash: demoPasswordHash
+      },
+      create: {
+        organizationId: organization.id,
+        firstName: 'Demo',
+        lastName: 'Pro-Aire',
+        email: demoEmail,
+        role: UserRole.OWNER,
+        passwordHash: demoPasswordHash
+      }
+    });
+
+    await tx.user.upsert({
       where: { email: salesEmail },
       update: {
         organizationId: organization.id,
@@ -84,6 +108,25 @@ async function main() {
         organizationId: organization.id,
         firstName: 'David',
         email: salesEmail,
+        role: UserRole.SALES,
+        passwordHash: salesPasswordHash
+      }
+    });
+
+    await tx.user.upsert({
+      where: { email: lucianaEmail },
+      update: {
+        organizationId: organization.id,
+        firstName: 'Luciana',
+        lastName: null,
+        role: UserRole.SALES,
+        status: 'active',
+        passwordHash: salesPasswordHash
+      },
+      create: {
+        organizationId: organization.id,
+        firstName: 'Luciana',
+        email: lucianaEmail,
         role: UserRole.SALES,
         passwordHash: salesPasswordHash
       }
@@ -272,10 +315,15 @@ K12 TUBO INSERTO MACHO (TF/M) 50MM X 1 1/2"|k12-tubo-inserto-macho-tfm-50mm-x-1-
           data: {
             fullName: 'Operador de planta',
             email: clientEmail,
+            phone: '+54 9 341 555-0192',
+            corporateEmail: 'compras@tallerrosario.com',
             companyName: 'Taller Rosario S.A.',
             segment: 'Industria',
             address: 'Rosario, Santa Fe',
-            status: 'active'
+            status: 'active',
+            maintenanceWhatsAppSentAt: new Date(),
+            maintenanceWhatsAppRepliedAt: null,
+            requiresDirectCall: true
           }
         })
       : await tx.customer.create({
@@ -283,9 +331,13 @@ K12 TUBO INSERTO MACHO (TF/M) 50MM X 1 1/2"|k12-tubo-inserto-macho-tfm-50mm-x-1-
             organizationId: organization.id,
             fullName: 'Operador de planta',
             email: clientEmail,
+            phone: '+54 9 341 555-0192',
+            corporateEmail: 'compras@tallerrosario.com',
             companyName: 'Taller Rosario S.A.',
             segment: 'Industria',
-            address: 'Rosario, Santa Fe'
+            address: 'Rosario, Santa Fe',
+            maintenanceWhatsAppSentAt: new Date(),
+            requiresDirectCall: true
           }
         });
 
@@ -351,10 +403,281 @@ K12 TUBO INSERTO MACHO (TF/M) 50MM X 1 1/2"|k12-tubo-inserto-macho-tfm-50mm-x-1-
         }
       });
     }
+
+    const david = await tx.user.findUniqueOrThrow({ where: { email: salesEmail } });
+    const luciana = await tx.user.findUniqueOrThrow({ where: { email: lucianaEmail } });
+    const quoteConversationId = 'demo-inbound-quote-pa132';
+    const financingConversationId = 'demo-inbound-financing-pa132';
+    const quoteInbound = await tx.conversation.upsert({
+      where: { id: quoteConversationId },
+      update: {
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        contactChannel: 'WHATSAPP',
+        threadId: 'demo-whatsapp-tallerrosario',
+        senderName: 'Operador de planta',
+        direction: 'INBOUND',
+        content: 'Hola, quisiera cotizar un PA 132 para la planta.',
+        summary: 'Consulta inbound para cotización del Compresor PA 132.',
+        status: 'COMPLETED'
+      },
+      create: {
+        id: quoteConversationId,
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        contactChannel: 'WHATSAPP',
+        threadId: 'demo-whatsapp-tallerrosario',
+        senderName: 'Operador de planta',
+        direction: 'INBOUND',
+        content: 'Hola, quisiera cotizar un PA 132 para la planta.',
+        summary: 'Consulta inbound para cotización del Compresor PA 132.',
+        status: 'COMPLETED'
+      }
+    });
+    await tx.conversation.upsert({
+      where: { id: 'demo-inbound-quote-reply-pa132' },
+      update: {
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        contactChannel: 'WHATSAPP',
+        threadId: 'demo-whatsapp-tallerrosario',
+        direction: 'OUTBOUND',
+        content: 'Para orientarte con el PA 132, ¿qué caudal necesitas y en qué turnos trabaja la planta?',
+        summary: 'Sofía inició el relevamiento consultivo de caudal y turnos.',
+        status: 'COMPLETED'
+      },
+      create: {
+        id: 'demo-inbound-quote-reply-pa132',
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        contactChannel: 'WHATSAPP',
+        threadId: 'demo-whatsapp-tallerrosario',
+        direction: 'OUTBOUND',
+        content: 'Para orientarte con el PA 132, ¿qué caudal necesitas y en qué turnos trabaja la planta?',
+        summary: 'Sofía inició el relevamiento consultivo de caudal y turnos.',
+        status: 'COMPLETED'
+      }
+    });
+    const financingConversation = await tx.conversation.upsert({
+      where: { id: financingConversationId },
+      update: {
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        contactChannel: 'WHATSAPP',
+        threadId: 'demo-whatsapp-financing-pa132',
+        senderName: 'Operador de planta',
+        direction: 'INBOUND',
+        content: '¿Pueden financiar el PA 132 en 8 cheques?',
+        summary: 'Consulta sobre financiación en 8 cheques para Compresor PA 132.',
+        requiresDerivation: true,
+        status: 'REQUIRES_HUMAN'
+      },
+      create: {
+        id: financingConversationId,
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        contactChannel: 'WHATSAPP',
+        threadId: 'demo-whatsapp-financing-pa132',
+        senderName: 'Operador de planta',
+        direction: 'INBOUND',
+        content: '¿Pueden financiar el PA 132 en 8 cheques?',
+        summary: 'Consulta sobre financiación en 8 cheques para Compresor PA 132.',
+        requiresDerivation: true,
+        status: 'REQUIRES_HUMAN'
+      }
+    });
+    await tx.copilotReference.upsert({
+      where: { refCode: '#REF-104' },
+      update: {
+        organizationId: organization.id,
+        conversationId: financingConversation.id,
+        customerId: tallerRosario.id,
+        assignedToUserId: david.id,
+        sourceChannel: 'WHATSAPP',
+        summary: 'Consulta de financiación en 8 cheques para un PA 132. Requiere confirmación comercial.',
+        requiresDerivation: true,
+        resolved: false,
+        resolvedAt: null
+      },
+      create: {
+        organizationId: organization.id,
+        conversationId: financingConversation.id,
+        customerId: tallerRosario.id,
+        assignedToUserId: david.id,
+        refCode: '#REF-104',
+        sourceChannel: 'WHATSAPP',
+        summary: 'Consulta de financiación en 8 cheques para un PA 132. Requiere confirmación comercial.',
+        requiresDerivation: true,
+        resolved: false
+      }
+    });
+
+    const wonBudget = await tx.budget.upsert({
+      where: { id: 'demo-budget-pa132-won' },
+      update: {
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        installedEquipmentId: equipment.id,
+        status: '03 - Ganado',
+        amount: '12500000.00',
+        motivoPerdida: null,
+        nextAction: 'Coordinar instalación y entrega'
+      },
+      create: {
+        id: 'demo-budget-pa132-won',
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        installedEquipmentId: equipment.id,
+        status: '03 - Ganado',
+        amount: '12500000.00',
+        nextAction: 'Coordinar instalación y entrega'
+      }
+    });
+    const lostBudget = await tx.budget.upsert({
+      where: { id: 'demo-budget-pa132-lost' },
+      update: {
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        installedEquipmentId: equipment.id,
+        status: '04 - Perdido',
+        amount: '4200000.00',
+        motivoPerdida: 'Precio elevado',
+        nextAction: null
+      },
+      create: {
+        id: 'demo-budget-pa132-lost',
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        installedEquipmentId: equipment.id,
+        status: '04 - Perdido',
+        amount: '4200000.00',
+        motivoPerdida: 'Precio elevado'
+      }
+    });
+    const followUpBudget = await tx.budget.upsert({
+      where: { id: 'demo-budget-pa132-follow-up' },
+      update: {
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        installedEquipmentId: equipment.id,
+        status: '02 - En Seguimiento',
+        amount: '12500000.00',
+        motivoPerdida: null,
+        nextAction: 'Sofía confirma lectura y consulta financiación'
+      },
+      create: {
+        id: 'demo-budget-pa132-follow-up',
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        installedEquipmentId: equipment.id,
+        status: '02 - En Seguimiento',
+        amount: '12500000.00',
+        nextAction: 'Sofía confirma lectura y consulta financiación'
+      }
+    });
+    for (const { dayNumber, message } of [
+      { dayNumber: 3, message: 'Confirmación de lectura del presupuesto.' },
+      { dayNumber: 7, message: 'Consulta sobre financiación en cheques.' },
+      { dayNumber: 15, message: 'Cierre de cartera o pase a 05 - Stand-By.' }
+    ]) {
+      await tx.budgetFollowUp.upsert({
+        where: {
+          budgetId_dayNumber: { budgetId: followUpBudget.id, dayNumber }
+        },
+        update: {
+          organizationId: organization.id,
+          message
+        },
+        create: {
+          organizationId: organization.id,
+          budgetId: followUpBudget.id,
+          dayNumber,
+          dueAt: new Date(Date.now() + dayNumber * 24 * 60 * 60 * 1000),
+          message
+        }
+      });
+    }
+
+    for (const [id, budget, user, daysAgo, transcript] of [
+      ['demo-minute-david', wonBudget, david, 3, 'Revisamos financiación y cerramos la propuesta del PA 132.'],
+      ['demo-minute-luciana', lostBudget, luciana, 1, 'Llamada preventiva: equipo a 4.280 hs, coordinar service antes de 4.500 hs.']
+    ] as const) {
+      await tx.voiceMinute.upsert({
+        where: { id },
+        update: {
+          organizationId: organization.id,
+          customerId: tallerRosario.id,
+          installedEquipmentId: equipment.id,
+          budgetId: budget.id,
+          userId: user.id,
+          transcript,
+          horometerHours: '4280.00',
+          nextAction: 'Llamar para coordinar próximos pasos',
+          createdAt: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000)
+        },
+        create: {
+          id,
+          organizationId: organization.id,
+          customerId: tallerRosario.id,
+          installedEquipmentId: equipment.id,
+          budgetId: budget.id,
+          userId: user.id,
+          transcript,
+          horometerHours: '4280.00',
+          nextAction: 'Llamar para coordinar próximos pasos',
+          createdAt: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000)
+        }
+      });
+    }
+
+    await tx.metaAudienceEntry.upsert({
+      where: {
+        organizationId_email: {
+          organizationId: organization.id,
+          email: 'compras@tallerrosario.com'
+        }
+      },
+      update: {
+        customerId: tallerRosario.id,
+        capturedByUserId: luciana.id,
+        capturedByName: 'Luciana',
+        tags: ['03 - Ganado', 'Horómetro Crítico']
+      },
+      create: {
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        capturedByUserId: luciana.id,
+        capturedByName: 'Luciana',
+        email: 'compras@tallerrosario.com',
+        tags: ['03 - Ganado', 'Horómetro Crítico']
+      }
+    });
+    await tx.metaAudienceEntry.upsert({
+      where: {
+        organizationId_email: {
+          organizationId: organization.id,
+          email: 'finanzas@tallerrosario.com'
+        }
+      },
+      update: {
+        customerId: tallerRosario.id,
+        capturedByUserId: david.id,
+        capturedByName: 'David',
+        tags: ['03 - Ganado']
+      },
+      create: {
+        organizationId: organization.id,
+        customerId: tallerRosario.id,
+        capturedByUserId: david.id,
+        capturedByName: 'David',
+        email: 'finanzas@tallerrosario.com',
+        tags: ['03 - Ganado']
+      }
+    });
   });
 
   console.info(
-    'Seed completed: Pro-Aire, Javier (OWNER), David (SALES), Taller Rosario (CLIENT_OPERATOR), catalog and PA-000125.'
+    'Seed completed: Pro-Aire, Demo/Javier (OWNER), David and Luciana (SALES), Taller Rosario (CLIENT_OPERATOR), WhatsApp inbound demo, budgets, audience, catalog and PA-000125.'
   );
 }
 

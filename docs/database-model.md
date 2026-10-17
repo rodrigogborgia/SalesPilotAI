@@ -9,6 +9,8 @@
 - `copilot_references` vincula cada derivación a la conversación original y al destinatario humano.
 - `installed_equipment` y `maintenance_plans` permiten servicio preventivo basado en horómetros.
 - `opportunities` conecta leads, clientes y ventas finalizadas.
+- `budgets` registra presupuestos con estados comerciales estandarizados; `voice_minutes` vincula cada minuta con el presupuesto, cliente y equipo actualizados.
+- `customers.lastContactAt` registra el último contacto comercial realizado.
 
 ## 2. Modelo relacional recomendado
 
@@ -74,6 +76,7 @@
 - organization_id: UUID FK -> organizations.id
 - full_name: VARCHAR(220)
 - email: VARCHAR(255) NULL
+- corporate_email: VARCHAR(255) NULL; email de contacto comercial, independiente del email de acceso al portal
 - phone: VARCHAR(50) NULL
 - company_name: VARCHAR(220) NULL
 - document_number: VARCHAR(80) NULL
@@ -178,6 +181,68 @@
 - won_at: TIMESTAMPTZ NULL
 - lost_at: TIMESTAMPTZ NULL
 - created_at, updated_at
+
+#### budgets
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- customer_id: UUID FK -> customers.id
+- installed_equipment_id: UUID NULL FK -> installed_equipment.id
+- status: VARCHAR(40), uno de `01 - Enviado`, `02 - En Seguimiento`, `03 - Ganado`, `04 - Perdido` o `05 - Stand-By`
+- amount: DECIMAL(12,2) default 0
+- motivo_perdida: VARCHAR(80) NULL; opciones: `Precio elevado`, `Plazo de entrega`, `Reparó equipo actual`, `Sin presupuesto`, `Lead frío / Sin respuesta`
+- next_action: TEXT NULL
+- created_at, updated_at
+
+#### budget_follow_ups
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- budget_id: UUID FK -> budgets.id
+- day_number: INTEGER (`3`, `7` o `15`)
+- due_at: TIMESTAMPTZ
+- status: VARCHAR(30) (`scheduled`, `sent`)
+- message: TEXT
+- processed_at: TIMESTAMPTZ NULL
+- UNIQUE (budget_id, day_number)
+
+#### budget_order_exports
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- budget_id: UUID FK -> budgets.id
+- payload: JSON; estructura agnóstica de Orden de Pedido
+- exported_at: TIMESTAMPTZ
+
+#### commercial_learning_rules
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- user_id: UUID NULL FK -> users.id
+- ref_code: VARCHAR(40)
+- objection: TEXT
+- rule: TEXT
+- notification_status: VARCHAR(30), por defecto `simulated`
+- created_at: TIMESTAMPTZ
+
+#### voice_minutes
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- customer_id: UUID FK -> customers.id
+- installed_equipment_id: UUID FK -> installed_equipment.id
+- budget_id: UUID FK -> budgets.id
+- transcript: TEXT NULL
+- horometer_hours: DECIMAL(12,2)
+- next_action: TEXT NULL
+- user_id: UUID NULL FK -> users.id
+- created_at
+
+#### meta_audience_entries
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- customer_id: UUID FK -> customers.id
+- captured_by_user_id: UUID NULL FK -> users.id
+- email: VARCHAR(254)
+- captured_by_name: VARCHAR(120)
+- tags: JSON; etiquetas comerciales como `03 - Ganado` y `Horómetro Crítico`
+- created_at, updated_at
+- UNIQUE (organization_id, email)
 
 ## 3. SQL DDL sugerido (PostgreSQL)
 

@@ -51,6 +51,14 @@ Para la demo local, entra a `/portal` con el usuario cliente o a `/simulator` co
 - `POST /api/auth/login` valida email y contraseña contra el hash bcrypt del usuario, y devuelve un JWT con vencimiento a las 12 horas.
 - `GET /api/auth/me` acepta `Authorization: Bearer <token>` y devuelve el usuario, organización y rol actuales, consultados desde la base de datos.
 - `NEXT_PUBLIC_API_URL` en `apps/web/.env.local` configura la URL base del backend para el formulario web.
+- El recuadro de adjunto del presupuesto PA 132 muestra `acá va el pdf`; el archivo oficial no se incluye en el repositorio.
+
+## Cadencia, derivaciones y órdenes
+
+- Los presupuestos nuevos programan recontactos de Sofía para los días 3, 7 y 15. El worker local procesa vencimientos cada hora; al día 15 mueve a `05 - Stand-By` los presupuestos aún abiertos.
+- La cola de mantenimiento genera la consulta de horómetro al alcanzar 4.000 hs y solo muestra equipos sin respuesta o marcados para llamada directa.
+- Al ganar un presupuesto se genera un registro JSON de Orden de Pedido. `GET /api/budgets/:budgetId/export-json` lo devuelve solo si el presupuesto está ganado.
+- El registro de reglas comerciales para `#REF-104` queda persistido; las notificaciones a Javier/Desarrollo son simuladas localmente.
 
 ## Separación entre panel interno y Portal Mi Planta
 

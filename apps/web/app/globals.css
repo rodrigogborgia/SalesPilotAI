@@ -19,11 +19,81 @@ html {
   background: var(--bg);
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
+  color-scheme: light;
 }
 
 body {
   margin: 0;
   background: var(--bg);
+}
+
+html.dark {
+  --bg: #0b1220;
+  --panel: #111c2e;
+  --text: #e5eaf3;
+  --muted: #a7b3c7;
+  --primary: #79a5ff;
+  --border: #29364a;
+  color-scheme: dark;
+}
+
+html.dark body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+html.dark [class~="bg-white"],
+html.dark [class~="bg-slate-50"],
+html.dark [class~="bg-slate-100"],
+html.dark [class~="bg-[#F1F4F9]"],
+html.dark [class~="bg-[#F4F7FB]"],
+html.dark [class~="bg-[#F5F8FC]"] {
+  background-color: #111c2e !important;
+  color: #e5eaf3;
+}
+
+html.dark [class~="bg-[#F7F9FC]"],
+html.dark [class~="bg-[#F4F7FB]"] {
+  background-color: #0e1727 !important;
+}
+
+html.dark [class~="text-[#172033]"],
+html.dark [class~="text-slate-700"],
+html.dark [class~="text-slate-600"],
+html.dark [class~="text-slate-500"],
+html.dark [class~="text-slate-400"] {
+  color: #c5cfdd !important;
+}
+
+html.dark [class~="border-slate-100"],
+html.dark [class~="border-slate-200"],
+html.dark [class~="border-slate-300"] {
+  border-color: #29364a !important;
+}
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+  border-color: #34445d;
+  background-color: #0e1727;
+  color: #e5eaf3;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #8795aa;
+}
+
+html.dark [class~="from-[#E8F0FA]"] {
+  --tw-gradient-from: #17243a var(--tw-gradient-from-position) !important;
+}
+
+html.dark [class~="via-[#F4F8FC]"] {
+  --tw-gradient-via: #111c2e var(--tw-gradient-via-position) !important;
+}
+
+html.dark [class~="to-[#DDE8F5]"] {
+  --tw-gradient-to: #1a2a42 var(--tw-gradient-to-position) !important;
 }
 
 .page-shell {
@@ -83,7 +153,7 @@ p {
   line-height: 1.8;
 }
 
-.grid {
+.page-shell > .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 24px;

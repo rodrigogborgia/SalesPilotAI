@@ -32,6 +32,12 @@ model Organization {
   opportunities      Opportunity[]
   conversationAudits ConversationAudit[]
   promptHistory      PromptHistory[]
+  budgets            Budget[]
+  budgetFollowUps    BudgetFollowUp[]
+  budgetOrderExports BudgetOrderExport[]
+  commercialLearningRules CommercialLearningRule[]
+  voiceMinutes       VoiceMinute[]
+  metaAudienceEntries MetaAudienceEntry[]
 
   @@index([status])
 }
@@ -58,6 +64,9 @@ model User {
   assignedCopilotReferences CopilotReference[]
   authoredPromptHistory     PromptHistory[]
   conversationAudits        ConversationAudit[]
+  authoredVoiceMinutes      VoiceMinute[]
+  capturedMetaAudiences      MetaAudienceEntry[]
+  authoredLearningRules      CommercialLearningRule[]
 
   @@index([organizationId, role])
 }
@@ -115,6 +124,7 @@ model Customer {
 
   fullName       String
   email          String?
+  corporateEmail String?
   phone          String?
   companyName    String?
   documentNumber String?
@@ -122,6 +132,10 @@ model Customer {
   address        String?
   notes          String?
   status         String   @default("active")
+  lastContactAt  DateTime?
+  maintenanceWhatsAppSentAt    DateTime?
+  maintenanceWhatsAppRepliedAt DateTime?
+  requiresDirectCall           Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -129,6 +143,9 @@ model Customer {
   conversations      Conversation[]
   copilotReferences  CopilotReference[]
   opportunities      Opportunity[]
+  budgets            Budget[]
+  voiceMinutes       VoiceMinute[]
+  metaAudienceEntries MetaAudienceEntry[]
 
   @@index([organizationId, status])
 }
@@ -159,6 +176,8 @@ model InstalledEquipment {
 
   maintenancePlans MaintenancePlan[]
   supportTickets   SupportTicket[]
+  budgets          Budget[]
+  voiceMinutes     VoiceMinute[]
 
   @@index([organizationId, customerId])
 }
@@ -265,6 +284,125 @@ model Opportunity {
   updatedAt         DateTime  @updatedAt
 
   @@index([organizationId, stage])
+}
+
+model Budget {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  installedEquipmentId String?
+  installedEquipment   InstalledEquipment? @relation(fields: [installedEquipmentId], references: [id], onDelete: SetNull)
+
+  status        String   @default("01 - Enviado")
+  amount        Decimal  @default("0.00")
+  motivoPerdida String?
+  nextAction    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  voiceMinutes VoiceMinute[]
+  followUps    BudgetFollowUp[]
+  orderExports BudgetOrderExport[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, customerId])
+}
+
+model BudgetFollowUp {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  budgetId       String
+  budget         Budget       @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  dayNumber      Int
+  dueAt          DateTime
+  status         String       @default("scheduled")
+  message        String
+  processedAt    DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([budgetId, dayNumber])
+  @@index([organizationId, status, dueAt])
+}
+
+model BudgetOrderExport {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  budgetId       String
+  budget         Budget       @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  payload        Json
+  exportedAt     DateTime     @default(now())
+
+  @@index([organizationId, exportedAt])
+  @@index([budgetId, exportedAt])
+}
+
+model CommercialLearningRule {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  refCode        String
+  objection      String
+  rule           String
+  notificationStatus String @default("simulated")
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([refCode])
+}
+
+model VoiceMinute {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  installedEquipmentId String
+  installedEquipment   InstalledEquipment @relation(fields: [installedEquipmentId], references: [id], onDelete: Cascade)
+
+  budgetId String
+  budget   Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  transcript   String?
+  horometerHours Decimal
+  nextAction   String?
+  createdAt    DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([customerId, createdAt])
+}
+
+model MetaAudienceEntry {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  capturedByUserId String?
+  capturedByUser   User?   @relation(fields: [capturedByUserId], references: [id], onDelete: SetNull)
+
+  email           String
+  capturedByName  String
+  tags            Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([organizationId, email])
+  @@index([organizationId, createdAt])
 }
 
 model Conversation {
