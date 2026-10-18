@@ -674,10 +674,40 @@ K12 TUBO INSERTO MACHO (TF/M) 50MM X 1 1/2"|k12-tubo-inserto-macho-tfm-50mm-x-1-
         tags: ['03 - Ganado']
       }
     });
+
+    for (const sale of [
+      { email: 'compras@andinaindustrial.com', phone: '+5491123456701', company: 'Andina Industrial', amount: '4850000.00', daysAgo: 1 },
+      { email: 'ventas@metalurgicacuyo.com', phone: '+5492615550102', company: 'Metalúrgica Cuyo', amount: '3260000.00', daysAgo: 12 },
+      { email: 'administracion@tallerlitoral.com', phone: '+5493415550103', company: 'Taller Litoral', amount: '1890000.00', daysAgo: 28 },
+      { email: 'compras@envasesdelsur.com', phone: '+5492235550104', company: 'Envases del Sur', amount: '7420000.00', daysAgo: 46 },
+      { email: 'mantenimiento@frigorificopampa.com', phone: '+5492954550105', company: 'Frigorífico Pampa', amount: '2650000.00', daysAgo: 68 },
+      { email: 'operaciones@logisticacentro.com', phone: '+5493515550106', company: 'Logística Centro', amount: '5310000.00', daysAgo: 89 }
+    ]) {
+      const purchaseDate = new Date(Date.now() - sale.daysAgo * 24 * 60 * 60 * 1000);
+      await tx.completedSale.upsert({
+        where: {
+          organizationId_email: { organizationId: organization.id, email: sale.email }
+        },
+        update: {
+          phone: sale.phone,
+          company: sale.company,
+          amount: sale.amount,
+          purchaseDate
+        },
+        create: {
+          organizationId: organization.id,
+          email: sale.email,
+          phone: sale.phone,
+          company: sale.company,
+          amount: sale.amount,
+          purchaseDate
+        }
+      });
+    }
   });
 
   console.info(
-    'Seed completed: Pro-Aire, Demo/Javier (OWNER), David and Luciana (SALES), Taller Rosario (CLIENT_OPERATOR), WhatsApp inbound demo, budgets, audience, catalog and PA-000125.'
+    'Seed completed: Pro-Aire, Demo/Javier (OWNER), David and Luciana (SALES), Taller Rosario (CLIENT_OPERATOR), WhatsApp inbound demo, budgets, completed sales audiences, catalog and PA-000125.'
   );
 }
 

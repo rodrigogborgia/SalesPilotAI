@@ -7,6 +7,91 @@ function dateFilter(days: number) {
 }
 
 export const adminService = {
+  async getCompletedSalesAudiences(organizationId: string) {
+    const buyers = await prisma.completedSale.findMany({
+      where: { organizationId },
+      orderBy: [{ purchaseDate: 'desc' }, { email: 'asc' }]
+    });
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const recentBuyers = buyers.filter((buyer) => buyer.purchaseDate >= cutoff);
+    const toAudienceEntry = (buyer: typeof buyers[number]) => ({
+      ...buyer,
+      amount: Number(buyer.amount),
+      purchaseDate: buyer.purchaseDate.toISOString()
+    });
+
+    return {
+      totalBuyers: buyers.length,
+      lookalikeSeed: buyers.map(toAudienceEntry),
+      recentExclusions: recentBuyers.map(toAudienceEntry),
+      topOfMind: recentBuyers.map(toAudienceEntry)
+    };
+  },
+
+  async importCompletedSales(
+    organizationId: string,
+    sales: Array<{ email: string; phone: string | null; company: string; amount: number; purchaseDate: Date }>
+  ) {
+    const newestByEmail = new Map<string, (typeof sales)[number]>();
+    for (const sale of sales) {
+      const current = newestByEmail.get(sale.email);
+      if (!current || sale.purchaseDate > current.purchaseDate) newestByEmail.set(sale.email, sale);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const sale of newestByEmail.values()) {
+        const current = await tx.completedSale.findUnique({
+          where: { organizationId_email: { organizationId, email: sale.email } }
+        });
+        if (current && current.purchaseDate > sale.purchaseDate) continue;
+        await tx.completedSale.upsert({
+          where: { organizationId_email: { organizationId, email: sale.email } },
+          update: {
+            phone: sale.phone,
+            company: sale.company,
+            amount: sale.amount,
+            purchaseDate: sale.purchaseDate
+          },
+          create: { organizationId, ...sale }
+        });
+      }
+    });
+
+    return {
+      importedCount: newestByEmail.size,
+      ...(await this.getCompletedSalesAudiences(organizationId))
+    };
+  },
+
+  async exportCompletedSalesAudiences(organizationId: string) {
+    const audiences = await this.getCompletedSalesAudiences(organizationId);
+    const escapeCsv = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+    const rows: Array<Array<string | number>> = [
+      ['audience', 'email', 'phone', 'company', 'amount', 'purchase_date']
+    ];
+    for (const buyer of audiences.lookalikeSeed) {
+      rows.push(['LOOKALIKE_SEED_1_PERCENT', buyer.email, buyer.phone ?? '', buyer.company, buyer.amount, buyer.purchaseDate]);
+    }
+    for (const buyer of audiences.recentExclusions) {
+      rows.push(['RECENT_BUYER_EXCLUSION_0_90_DAYS', buyer.email, buyer.phone ?? '', buyer.company, buyer.amount, buyer.purchaseDate]);
+    }
+    for (const buyer of audiences.topOfMind) {
+      rows.push(['TOP_OF_MIND_MAINTENANCE_0_90_DAYS', buyer.email, buyer.phone ?? '', buyer.company, buyer.amount, buyer.purchaseDate]);
+    }
+    return rows.map((row) => row.map(escapeCsv).join(',')).join('\n');
+  },
+
+  async simulateCompletedSalesMetaSync(organizationId: string) {
+    const audiences = await this.getCompletedSalesAudiences(organizationId);
+    return {
+      simulated: true,
+      lookalikeSeedCount: audiences.totalBuyers,
+      recentExclusionCount: audiences.recentExclusions.length,
+      topOfMindCount: audiences.topOfMind.length,
+      message: 'Ambas audiencias quedaron preparadas localmente. La exclusión de compradores recientes está lista para campañas de captación; configura credenciales de Meta Ads para sincronizar en vivo.'
+    };
+  },
+
   async getDashboard(organizationId: string, days: number) {
     const createdAt = dateFilter(days);
     const now = new Date();

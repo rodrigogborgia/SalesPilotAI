@@ -38,6 +38,7 @@ model Organization {
   commercialLearningRules CommercialLearningRule[]
   voiceMinutes       VoiceMinute[]
   metaAudienceEntries MetaAudienceEntry[]
+  completedSales     CompletedSale[]
 
   @@index([status])
 }
@@ -403,6 +404,23 @@ model MetaAudienceEntry {
 
   @@unique([organizationId, email])
   @@index([organizationId, createdAt])
+}
+
+model CompletedSale {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  email        String
+  phone        String?
+  company      String
+  amount       Decimal
+  purchaseDate DateTime
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([organizationId, email])
+  @@index([organizationId, purchaseDate])
 }
 
 model Conversation {

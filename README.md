@@ -29,6 +29,12 @@ npm run dev:web
 npm run build
 ```
 
+## Importación de ventas para Meta Ads
+
+La consola `/admin` permite importar un CSV de ventas concretadas con las columnas `Email`, `Teléfono`, `Empresa`, `Monto` y `Fecha de Compra` (teléfono opcional; fechas `DD/MM/AAAA` o ISO). La API protegida `POST /api/admin/sales-import` recibe las ventas en el campo `sales`; el endpoint `GET /api/admin/sales-import` devuelve la semilla Lookalike, la exclusión de compradores recientes y la audiencia de post-venta activa.
+
+La semilla Lookalike usa todos los compradores importados. Las compras de los últimos 90 días se identifican además como exclusión de captación y como audiencia Top of Mind / mantenimiento. La sincronización con Meta y el CSV combinado de segmentos son preparaciones locales simuladas; no se envían datos a Meta Ads.
+
 ## Estructura
 
 ```text
