@@ -1,7 +1,12 @@
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import DemoTour from '../components/DemoTour';
 import ThemeToggle from '../components/ThemeToggle';
+import { getViewMode, type ViewMode } from '../lib/alphaViewMode';
 
 const workspaces = [
   {
@@ -19,7 +24,7 @@ const workspaces = [
     icon: '💬',
     action: 'Hablar con Sofía',
     description:
-      'Chat inbound con Sofía, derivación #REF-104 y minutas de voz para David y Luciana.',
+      'Chat inbound con Sofía, derivación #REF-104 y registro manual para David y Luciana.',
     detail: 'Atención y seguimiento'
   },
   {
@@ -49,6 +54,38 @@ const capabilities = [
 ];
 
 export default function HomePage() {
+  const router = useRouter();
+  const [sessionChecked, setSessionChecked] = useState(false);
+
+  useEffect(() => {
+    const savedMode = window.localStorage.getItem('salespilot_view_mode');
+    const savedUser = window.localStorage.getItem('salespilot_user');
+    let viewMode: ViewMode | null =
+      savedMode === 'david' || savedMode === 'luciana' || savedMode === 'javier' ? savedMode : null;
+
+    if (!viewMode && savedUser) {
+      try {
+        const user = JSON.parse(savedUser) as { firstName?: string; role?: string };
+        if (typeof user.firstName === 'string' && typeof user.role === 'string') {
+          viewMode = getViewMode(user.firstName, user.role);
+        }
+      } catch {
+        viewMode = null;
+      }
+    }
+
+    if (viewMode) {
+      router.replace(viewMode === 'javier' ? '/dashboard' : '/simulator');
+      return;
+    }
+
+    setSessionChecked(true);
+  }, [router]);
+
+  if (!sessionChecked) {
+    return <main className="min-h-screen bg-slate-50 dark:bg-slate-950" aria-label="Cargando espacio de trabajo" />;
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <header className="border-b border-slate-200 bg-white/90 dark:border-slate-800 dark:bg-slate-950/90">
@@ -70,6 +107,12 @@ export default function HomePage() {
             </div>
           </div>
           <nav aria-label="Controles de la página" className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/login"
+              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-700 sm:px-4 sm:text-sm"
+            >
+              Iniciar Sesión
+            </Link>
             <DemoTour />
             <ThemeToggle />
           </nav>
@@ -111,6 +154,12 @@ export default function HomePage() {
                   className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md"
                 >
                   Probar a Sofía <span aria-hidden="true" className="ml-2">→</span>
+                </Link>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-5 py-3 text-sm font-bold text-blue-800 transition hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200 dark:hover:bg-blue-950"
+                >
+                  Acceso a Consola Operativa
                 </Link>
                 <a
                   href="#espacios"

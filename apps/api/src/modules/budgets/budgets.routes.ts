@@ -48,14 +48,19 @@ budgetsRoutes.get('/:budgetId/export-json', async (req, res, next) => {
 });
 
 budgetsRoutes.patch('/:budgetId/status', async (req, res, next) => {
-  const body = req.body as { status?: unknown; motivoPerdida?: unknown };
+  const body = req.body as { status?: unknown; motivoPerdida?: unknown; motivoPerdidaNota?: unknown };
   if (
     !isBudgetStatus(body?.status) ||
     (body.motivoPerdida !== undefined &&
       body.motivoPerdida !== null &&
-      !isBudgetLossReason(body.motivoPerdida))
+      !isBudgetLossReason(body.motivoPerdida)) ||
+    (body.status === '04 - Perdido' &&
+      (!isBudgetLossReason(body.motivoPerdida) ||
+        typeof body.motivoPerdidaNota !== 'string' ||
+        !body.motivoPerdidaNota.trim() ||
+        body.motivoPerdidaNota.length > 2000))
   ) {
-    res.status(400).json({ message: 'Estado o motivo de pérdida inválido.' });
+    res.status(400).json({ message: 'Al marcar como perdido, indica un motivo estándar y una nota breve.' });
     return;
   }
 
@@ -64,7 +69,8 @@ budgetsRoutes.patch('/:budgetId/status', async (req, res, next) => {
       req.auth!.organizationId,
       req.params.budgetId,
       body.status,
-      isBudgetLossReason(body.motivoPerdida) ? body.motivoPerdida : undefined
+      isBudgetLossReason(body.motivoPerdida) ? body.motivoPerdida : undefined,
+      typeof body.motivoPerdidaNota === 'string' ? body.motivoPerdidaNota.trim() : undefined
     );
     if (!result.count) {
       res.status(404).json({ message: 'Presupuesto no encontrado.' });
@@ -83,6 +89,7 @@ budgetsRoutes.post('/minutes', async (req, res, next) => {
     status?: unknown;
     amount?: unknown;
     motivoPerdida?: unknown;
+    motivoPerdidaNota?: unknown;
     nextAction?: unknown;
     horometerHours?: unknown;
     transcript?: unknown;
@@ -99,6 +106,12 @@ budgetsRoutes.post('/minutes', async (req, res, next) => {
     (body.motivoPerdida !== undefined &&
       body.motivoPerdida !== null &&
       !isBudgetLossReason(body.motivoPerdida)) ||
+    (body.motivoPerdidaNota !== undefined &&
+      (typeof body.motivoPerdidaNota !== 'string' || body.motivoPerdidaNota.length > 2000)) ||
+    (body.status === '04 - Perdido' &&
+      (!isBudgetLossReason(body.motivoPerdida) ||
+        typeof body.motivoPerdidaNota !== 'string' ||
+        !body.motivoPerdidaNota.trim())) ||
     (body.nextAction !== undefined &&
       (typeof body.nextAction !== 'string' || body.nextAction.length > 2000)) ||
     (body.transcript !== undefined &&
@@ -117,6 +130,9 @@ budgetsRoutes.post('/minutes', async (req, res, next) => {
       amount: String(body.amount),
       ...(isBudgetLossReason(body.motivoPerdida)
         ? { motivoPerdida: body.motivoPerdida }
+        : {}),
+      ...(typeof body.motivoPerdidaNota === 'string'
+        ? { motivoPerdidaNota: body.motivoPerdidaNota.trim() }
         : {}),
       ...(typeof body.nextAction === 'string' ? { nextAction: body.nextAction } : {}),
       horometerHours: String(body.horometerHours),

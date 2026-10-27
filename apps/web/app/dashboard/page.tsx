@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import DemoTour from '../../components/DemoTour';
 import ThemeToggle from '../../components/ThemeToggle';
+import {
+  type ManualFollowUp
+} from '../../lib/manualFollowUps';
 
 type DashboardData = {
   rangeDays: number;
@@ -55,6 +58,13 @@ type Drilldown = 'budgets' | 'minutes' | 'equipment' | 'losses' | 'follow-ups' |
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const currency = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function DashboardPage() {
   const [token, setToken] = useState('');
   const [mounted, setMounted] = useState(false);
@@ -62,6 +72,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [drilldown, setDrilldown] = useState<Drilldown | null>(null);
   const [error, setError] = useState('');
+  const [manualFollowUps, setManualFollowUps] = useState<ManualFollowUp[]>([]);
 
   useEffect(() => {
     setMounted(true);
@@ -72,6 +83,31 @@ export default function DashboardPage() {
   useEffect(() => {
     if (token) void loadDashboard();
   }, [token, days]);
+
+  useEffect(() => {
+    if (!token) return;
+    let isActive = true;
+    const loadManualFollowUps = async () => {
+      try {
+        const response = await fetch(`${apiUrl}/api/follow-ups`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const result = await response.json() as ManualFollowUp[] | { message?: string };
+        if (!response.ok || !Array.isArray(result)) {
+          throw new Error(!Array.isArray(result) ? result.message ?? 'No se pudieron cargar los re-contactos del equipo.' : 'No se pudieron cargar los re-contactos del equipo.');
+        }
+        if (isActive) setManualFollowUps(result);
+      } catch (loadError) {
+        if (isActive) setError(loadError instanceof Error ? loadError.message : 'No se pudieron cargar los re-contactos del equipo.');
+      }
+    };
+    void loadManualFollowUps();
+    const refreshTimer = window.setInterval(() => void loadManualFollowUps(), 30_000);
+    return () => {
+      isActive = false;
+      window.clearInterval(refreshTimer);
+    };
+  }, [token]);
 
   async function loadDashboard() {
     setError('');
@@ -98,7 +134,7 @@ export default function DashboardPage() {
     },
     {
       key: 'minutes',
-      title: 'Minutas de voz procesadas',
+      title: 'Minutas comerciales registradas',
       value: String(data.minuteCount),
       detail: data.minutesByOwner.map((owner) => `${owner.name}: ${owner.count}`).join(' · ') || 'Sin actividad'
     },
@@ -137,6 +173,66 @@ export default function DashboardPage() {
       detail: 'Conversaciones que requirieron intervención comercial'
     }
   ] : [];
+
+  const now = new Date();
+  const rangeStart = days === 'all'
+    ? null
+    : new Date(now.getTime() - Number(days) * 24 * 60 * 60 * 1000);
+  const weekEnd = new Date(now);
+  weekEnd.setDate(weekEnd.getDate() + ((7 - weekEnd.getDay()) % 7));
+  weekEnd.setHours(23, 59, 59, 999);
+  const todayKey = localDateKey(now);
+  const followUpMetrics = (['David', 'Luciana'] as const).map((owner) => {
+    const ownerFollowUps = manualFollowUps.filter((item) => item.owner === owner);
+    const inPeriod = (value: string | null) => {
+      if (!value) return false;
+      const timestamp = Date.parse(value);
+      return Number.isFinite(timestamp) &&
+        (!rangeStart || timestamp >= rangeStart.getTime()) &&
+        timestamp <= now.getTime();
+    };
+    const inPlanningWindow = (value: string | null) => {
+      if (!value) return false;
+      const timestamp = Date.parse(value);
+      return Number.isFinite(timestamp) &&
+        (!rangeStart || timestamp >= rangeStart.getTime()) &&
+        timestamp <= weekEnd.getTime();
+    };
+    const scheduledInRange = ownerFollowUps.filter((item) => inPeriod(item.dueAt));
+    const plannedForWeek = ownerFollowUps.filter((item) => inPlanningWindow(item.dueAt));
+    const overdue = scheduledInRange.filter((item) =>
+      item.status === 'scheduled' && Date.parse(item.dueAt) < now.getTime()
+    ).length;
+    const pendingToday = plannedForWeek.filter((item) =>
+      item.status === 'scheduled' &&
+      localDateKey(new Date(item.dueAt)) === todayKey &&
+      Date.parse(item.dueAt) >= now.getTime()
+    ).length;
+    const pendingThisWeek = plannedForWeek.filter((item) => {
+      const dueAt = Date.parse(item.dueAt);
+      return item.status === 'scheduled' &&
+        localDateKey(new Date(item.dueAt)) !== todayKey &&
+        dueAt > now.getTime() &&
+        dueAt <= weekEnd.getTime();
+    }).length;
+    const completed = ownerFollowUps.filter((item) =>
+      item.status !== 'scheduled' && item.status !== 'cancelled' && inPeriod(item.completedAt)
+    ).length;
+    const totalScheduled = scheduledInRange.filter((item) => item.status !== 'cancelled').length;
+    const completedCommitments = scheduledInRange.filter((item) =>
+      item.status !== 'scheduled' && item.status !== 'cancelled'
+    ).length;
+    return {
+      owner,
+      area: owner === 'David' ? 'Ventas' : 'Post-venta',
+      overdue,
+      pendingToday,
+      pendingThisWeek,
+      completed,
+      compliance: totalScheduled ? Math.round((completedCommitments / totalScheduled) * 100) : 0
+    };
+  });
+  const overdueFollowUpTotal = followUpMetrics.reduce((total, item) => total + item.overdue, 0);
 
   return (
     <main className="min-h-screen bg-[#F1F4F9] text-[#172033] dark:bg-[#0b1220] dark:text-slate-100">
@@ -185,6 +281,65 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
+
+        <section aria-label="Salud y Eficiencia de Seguimiento Comercial" className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#1E64FF]">Actividad manual del equipo</p>
+              <h2 className="mt-1 text-xl font-bold">Salud y Eficiencia de Seguimiento Comercial</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Cola compartida del simulador · {days === 'all' ? 'Todo el período' : `Últimos ${days} días`}
+              </p>
+            </div>
+            {overdueFollowUpTotal > 0 && (
+              <span role="status" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+                ⚠️ {overdueFollowUpTotal} re-llamados vencidos requieren atención directiva
+              </span>
+            )}
+          </div>
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left">
+              <thead>
+                <tr className="text-xs font-bold text-slate-500">
+                  <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">Ejecutivo</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Vencidos 🔴</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Pendientes Hoy 📅</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Esta Semana</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Completados en Período 🟢</th>
+                  <th className="border-b border-slate-200 px-3 py-3">Tasa de Cumplimiento (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {followUpMetrics.map((metric) => (
+                  <tr key={metric.owner} className="text-sm">
+                    <th scope="row" className="border-b border-slate-100 px-3 py-4 dark:border-slate-800">
+                      <span className="block font-bold">{metric.owner}</span>
+                      <span className="mt-0.5 block text-xs font-normal text-slate-500">{metric.area}</span>
+                    </th>
+                    <td className="border-b border-slate-100 px-3 py-4 font-bold text-red-700 dark:border-slate-800 dark:text-red-300">{metric.overdue}</td>
+                    <td className="border-b border-slate-100 px-3 py-4 font-semibold">{metric.pendingToday}</td>
+                    <td className="border-b border-slate-100 px-3 py-4 font-semibold">{metric.pendingThisWeek}</td>
+                    <td className="border-b border-slate-100 px-3 py-4 font-semibold text-emerald-700 dark:border-slate-800 dark:text-emerald-300">{metric.completed}</td>
+                    <td className="border-b border-slate-100 px-3 py-4 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <span className="w-10 font-bold">{metric.compliance}%</span>
+                        <span className="h-2 w-24 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                          <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${metric.compliance}%` }} />
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!manualFollowUps.length && (
+            <p className="mt-3 text-xs text-slate-500">
+              Aún no hay re-contactos en la cola compartida. Se mostrarán aquí cuando se agenden desde el simulador.
+            </p>
+          )}
+        </section>
 
         {drilldown && data && (
           <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">

@@ -9,11 +9,10 @@ export const BudgetStatus = {
 export type BudgetStatus = (typeof BudgetStatus)[keyof typeof BudgetStatus];
 
 export const BudgetLossReason = {
-  HIGH_PRICE: 'Precio elevado',
-  DELIVERY_TIME: 'Plazo de entrega',
-  REPAIRED_CURRENT_EQUIPMENT: 'Reparó equipo actual',
-  NO_BUDGET: 'Sin presupuesto',
-  COLD_LEAD: 'Lead frío / Sin respuesta'
+  PRICE: 'Precio',
+  DELIVERY_TIME: 'Tiempo de Entrega',
+  COMPETITION: 'Competencia',
+  FINANCING: 'Financiamiento'
 } as const;
 
 export type BudgetLossReason = (typeof BudgetLossReason)[keyof typeof BudgetLossReason];

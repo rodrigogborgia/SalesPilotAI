@@ -13,6 +13,46 @@ maintenanceRoutes.get('/outbound', async (req, res, next) => {
   }
 });
 
+maintenanceRoutes.post('/check-ins/reschedule', async (req, res, next) => {
+  const body = req.body as {
+    equipmentId?: unknown;
+    horometerHours?: unknown;
+    dueAt?: unknown;
+  };
+  const hours = typeof body.horometerHours === 'number' || typeof body.horometerHours === 'string'
+    ? Number(body.horometerHours)
+    : Number.NaN;
+  const dueAt = typeof body.dueAt === 'string' ? new Date(body.dueAt) : null;
+  if (
+    typeof body.equipmentId !== 'string' ||
+    !body.equipmentId.trim() ||
+    !Number.isFinite(hours) ||
+    hours < 0 ||
+    !dueAt ||
+    !Number.isFinite(dueAt.getTime())
+  ) {
+    res.status(400).json({ message: 'Datos inválidos para re-agendar el check-in.' });
+    return;
+  }
+
+  try {
+    const result = await maintenanceService.rescheduleCheckIn(
+      req.auth!.organizationId,
+      req.auth!.userId,
+      body.equipmentId.trim(),
+      String(hours),
+      dueAt
+    );
+    if (!result) {
+      res.status(404).json({ message: 'Equipo o usuario no encontrado.' });
+      return;
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 maintenanceRoutes.post('/email-capture', async (req, res, next) => {
   const body = req.body as { customerId?: unknown; email?: unknown };
   if (

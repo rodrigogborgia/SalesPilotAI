@@ -1,7 +1,9 @@
 'use client';
 
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
+import { getViewMode } from '../../lib/alphaViewMode';
 
 type LoginResponse = {
   token?: string;
@@ -13,6 +15,7 @@ type LoginResponse = {
 };
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -37,10 +40,11 @@ export default function LoginPage() {
         return;
       }
 
+      const viewMode = getViewMode(result.user.firstName, result.user.role);
       window.localStorage.setItem('salespilot_token', result.token);
       window.localStorage.setItem('salespilot_user', JSON.stringify(result.user));
-      const nextPath = new URLSearchParams(window.location.search).get('next');
-      window.location.assign(nextPath?.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/');
+      window.localStorage.setItem('salespilot_view_mode', viewMode);
+      router.push(viewMode === 'javier' ? '/dashboard' : '/simulator');
     } catch {
       setError('No se pudo conectar con SalesPilotAI. Intenta nuevamente en unos minutos.');
     } finally {

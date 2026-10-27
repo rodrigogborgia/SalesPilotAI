@@ -9,8 +9,9 @@
 - `copilot_references` vincula cada derivación a la conversación original y al destinatario humano.
 - `installed_equipment` y `maintenance_plans` permiten servicio preventivo basado en horómetros.
 - `opportunities` conecta leads, clientes y ventas finalizadas.
-- `budgets` registra presupuestos con estados comerciales estandarizados; `voice_minutes` vincula cada minuta con el presupuesto, cliente y equipo actualizados.
+- `budgets` registra presupuestos con estados comerciales estandarizados; `voice_minutes` vincula cada minuta manual con el presupuesto, cliente y equipo actualizados.
 - `customers.lastContactAt` registra el último contacto comercial realizado.
+- `manual_follow_ups` sostiene la agenda operativa de David y Luciana: siete re-contactos de ventas, decisiones de mantenimiento y cancelación de la cadencia al cerrar una oportunidad.
 
 ## 2. Modelo relacional recomendado
 
@@ -75,6 +76,7 @@
 - id: UUID PK
 - organization_id: UUID FK -> organizations.id
 - full_name: VARCHAR(220)
+- contact_title: VARCHAR(200) NULL
 - email: VARCHAR(255) NULL
 - corporate_email: VARCHAR(255) NULL; email de contacto comercial, independiente del email de acceso al portal
 - phone: VARCHAR(50) NULL
@@ -157,6 +159,7 @@
 - source: VARCHAR(60)
 - source_campaign: VARCHAR(180) NULL
 - customer_name: VARCHAR(220)
+- contact_title: VARCHAR(200) NULL
 - contact_phone: VARCHAR(60)
 - email: VARCHAR(255) NULL
 - company_name: VARCHAR(220) NULL
@@ -189,7 +192,8 @@
 - installed_equipment_id: UUID NULL FK -> installed_equipment.id
 - status: VARCHAR(40), uno de `01 - Enviado`, `02 - En Seguimiento`, `03 - Ganado`, `04 - Perdido` o `05 - Stand-By`
 - amount: DECIMAL(12,2) default 0
-- motivo_perdida: VARCHAR(80) NULL; opciones: `Precio elevado`, `Plazo de entrega`, `Reparó equipo actual`, `Sin presupuesto`, `Lead frío / Sin respuesta`
+- motivo_perdida: VARCHAR(80) NULL; opciones: `Precio`, `Tiempo de Entrega`, `Competencia`, `Financiamiento`
+- motivo_perdida_nota: TEXT NULL; contexto breve obligatorio al cerrar como perdido
 - next_action: TEXT NULL
 - created_at, updated_at
 
@@ -697,6 +701,12 @@ model Opportunity {
 - `installed_equipment` registra la instalación física por cliente y producto.
 - `maintenance_plans` se calculan en función del `current_hours` y `avg_hours_per_day` para obtener alertas de mantenimiento.
 - `opportunities` se alimenta desde tanto `lead` como `customer`, con `stage`, `probability` y `amount`.
+- La captura manual crea un `Lead`, una `Opportunity` con el importe y producto estimados y una cadencia de hasta siete `ManualFollowUp` asignados a David. El paso a `03 - Cotizado` garantiza la cadencia si aún no existe.
+- `ManualFollowUp` mantiene agenda, prioridad, responsable, minuta, resultado y fecha de cierre en la base de la organización, además de nombre/cargo/email del contacto. Los cierres de oportunidades validan el motivo estándar y cancelan el resto de la cadencia; el check-in de Luciana puede re-agendar sin presupuesto o programar el seguimiento y el próximo service.
+- Las tarjetas de agenda presentan la ficha de contacto y la última minuta o comentario previo, usando la fecha de actualización del seguimiento, prospecto o referencia.
+- El simulador y el dashboard consumen estos registros mediante `/api/follow-ups`; `/api/leads` crea, lista y actualiza prospectos. Ambos recursos requieren sesión y filtran por organización.
+- `Budget.motivoPerdida` conserva uno de los motivos estándar (`Precio`, `Tiempo de Entrega`, `Competencia`, `Financiamiento`) y `motivoPerdidaNota` guarda el contexto para reportes.
+- Tras actualizar el esquema Prisma en una instalación local, ejecutar `npm run db:setup` desde la raíz para aplicar los nuevos modelos y columnas a SQLite.
 
 ## 7. Recomendación de ORM
 

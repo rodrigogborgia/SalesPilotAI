@@ -14,7 +14,35 @@ export const copilotService = {
   listReferences(organizationId: string) {
     return prisma.copilotReference.findMany({
       where: { organizationId },
-      include: { conversation: { select: { status: true } } },
+      include: {
+        customer: {
+          select: {
+            fullName: true,
+            contactTitle: true,
+            companyName: true,
+            phone: true,
+            email: true,
+            corporateEmail: true
+          }
+        },
+        conversation: {
+          select: {
+            status: true,
+            senderName: true,
+            senderPhone: true,
+            customer: {
+              select: {
+                fullName: true,
+                contactTitle: true,
+                companyName: true,
+                phone: true,
+                email: true,
+                corporateEmail: true
+              }
+            }
+          }
+        }
+      },
       orderBy: { createdAt: 'desc' }
     });
   },

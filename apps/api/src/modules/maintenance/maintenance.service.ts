@@ -1,6 +1,53 @@
 import prisma from '../../lib/prisma';
+import { Prisma } from '@prisma/client';
 
 export const maintenanceService = {
+  async rescheduleCheckIn(
+    organizationId: string,
+    userId: string,
+    equipmentId: string,
+    horometerHours: string,
+    dueAt: Date
+  ) {
+    return prisma.$transaction(async (tx) => {
+      const equipment = await tx.installedEquipment.findFirst({
+        where: { id: equipmentId, organizationId },
+        include: { customer: true }
+      });
+      const user = await tx.user.findFirst({
+        where: { id: userId, organizationId, status: 'active' }
+      });
+      if (!equipment || !user) return null;
+
+      const [updatedEquipment, followUp] = await Promise.all([
+        tx.installedEquipment.update({
+          where: { id: equipment.id },
+          data: { currentHours: new Prisma.Decimal(horometerHours) }
+        }),
+        tx.manualFollowUp.create({
+          data: {
+            organizationId,
+            assignedToUserId: user.id,
+            customer: equipment.customer.companyName ?? equipment.customer.fullName,
+            contactName: equipment.customer.fullName,
+            contactTitle: equipment.customer.contactTitle,
+            email: equipment.customer.corporateEmail ?? equipment.customer.email,
+            phone: equipment.customer.phone ?? '',
+            reason: `Re-llamar por mantenimiento · ${equipment.model} · ${horometerHours} hs`,
+            dueAt,
+            priority: 'Media',
+            owner: 'Luciana'
+          }
+        }),
+        tx.customer.update({
+          where: { id: equipment.customerId },
+          data: { lastContactAt: new Date() }
+        })
+      ]);
+      return { equipment: updatedEquipment, followUp };
+    });
+  },
+
   async triggerHorometerOutreach(organizationId: string) {
     const candidates = await prisma.installedEquipment.findMany({
       where: {

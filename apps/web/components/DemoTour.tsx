@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { ENABLE_SOFIA_CHAT, getViewMode } from '../lib/alphaViewMode';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const steps = [
@@ -11,7 +12,7 @@ const steps = [
   { label: '4. Métricas Gerenciales Javier', href: '/dashboard?demo=4' },
   { label: '5. Portal Cliente "Mi Planta"', href: '/portal?demo=5' },
   { label: '6. Admin Sync Meta Ads', href: '/admin?demo=6' }
-];
+].filter((step) => ENABLE_SOFIA_CHAT || !step.href.includes('module=copilot'));
 
 type DemoLoginResponse = {
   token?: string;
@@ -47,6 +48,7 @@ export default function DemoTour() {
 
     window.localStorage.setItem('salespilot_token', result.token);
     window.localStorage.setItem('salespilot_user', JSON.stringify(result.user));
+    window.localStorage.setItem('salespilot_view_mode', getViewMode(result.user.firstName, result.user.role));
     window.dispatchEvent(new Event('salespilot:auth-changed'));
   }
 

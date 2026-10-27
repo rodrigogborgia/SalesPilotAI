@@ -16,6 +16,7 @@ export type CreateVoiceMinuteInput = {
   status: BudgetStatus;
   amount: string;
   motivoPerdida?: string;
+  motivoPerdidaNota?: string;
   nextAction?: string;
   horometerHours: string;
   transcript?: string;
@@ -108,7 +109,8 @@ export const budgetsService = {
     organizationId: string,
     budgetId: string,
     status: BudgetStatus,
-    motivoPerdida?: string
+    motivoPerdida?: string,
+    motivoPerdidaNota?: string
   ) {
     return prisma.$transaction(async (tx) => {
       const budget = await tx.budget.findFirst({ where: { id: budgetId, organizationId } });
@@ -117,7 +119,8 @@ export const budgetsService = {
         where: { id: budget.id },
         data: {
           status,
-          motivoPerdida: status === BudgetStatus.LOST ? motivoPerdida ?? null : null
+          motivoPerdida: status === BudgetStatus.LOST ? motivoPerdida ?? null : null,
+          motivoPerdidaNota: status === BudgetStatus.LOST ? motivoPerdidaNota ?? null : null
         }
       });
       if (status !== BudgetStatus.SENT && status !== BudgetStatus.FOLLOW_UP) {
@@ -198,7 +201,13 @@ export const budgetsService = {
     return prisma.$transaction(async (tx) => {
       const equipment = await tx.installedEquipment.findFirst({
         where: { id: input.equipmentId, organizationId },
-        include: { customer: true }
+        include: {
+          customer: true,
+          maintenancePlans: {
+            where: { status: 'active' },
+            orderBy: { nextDueHours: 'asc' }
+          }
+        }
       });
 
       if (!equipment) return null;
@@ -207,6 +216,7 @@ export const budgetsService = {
         status: input.status,
         amount: new Prisma.Decimal(input.amount),
         motivoPerdida: input.status === BudgetStatus.LOST ? input.motivoPerdida ?? null : null,
+        motivoPerdidaNota: input.status === BudgetStatus.LOST ? input.motivoPerdidaNota ?? null : null,
         nextAction: input.nextAction?.trim() || null
       };
 
@@ -276,6 +286,53 @@ export const budgetsService = {
           }
         })
       ]);
+
+      const user = await tx.user.findFirst({
+        where: { id: input.userId, organizationId, status: 'active' },
+        select: { id: true, firstName: true }
+      });
+      if (!user) throw new Error('No se encontró el usuario activo que registra el check-in.');
+
+      if (user.firstName === 'Luciana' && input.status === BudgetStatus.SENT && previousStatus !== BudgetStatus.SENT) {
+        const dueAt = new Date();
+        dueAt.setDate(dueAt.getDate() + 3);
+        await tx.manualFollowUp.create({
+          data: {
+            organizationId,
+            assignedToUserId: user.id,
+            customer: equipment.customer.companyName ?? equipment.customer.fullName,
+            phone: equipment.customer.phone ?? '',
+            reason: `Seguimiento de presupuesto enviado · ${equipment.model}`,
+            dueAt,
+            priority: 'Media',
+            owner: 'Luciana'
+          }
+        });
+      }
+
+      if (user.firstName === 'Luciana' && input.status === BudgetStatus.WON && previousStatus !== BudgetStatus.WON) {
+        const nextService = equipment.maintenancePlans[0];
+        const currentHoursNumber = Number(currentHours);
+        const serviceHoursRemaining = nextService ? nextService.nextDueHours - currentHoursNumber : null;
+        const avgHoursPerDay = Number(equipment.avgHoursPerDay);
+        const daysUntilService = serviceHoursRemaining !== null && avgHoursPerDay > 0
+          ? Math.max(1, Math.ceil(serviceHoursRemaining / avgHoursPerDay))
+          : 30;
+        const dueAt = new Date();
+        dueAt.setDate(dueAt.getDate() + daysUntilService);
+        await tx.manualFollowUp.create({
+          data: {
+            organizationId,
+            assignedToUserId: user.id,
+            customer: equipment.customer.companyName ?? equipment.customer.fullName,
+            phone: equipment.customer.phone ?? '',
+            reason: `Alerta de próximo service · ${equipment.model}${nextService ? ` · ${nextService.planName} a ${nextService.nextDueHours} hs` : ''}`,
+            dueAt,
+            priority: serviceHoursRemaining !== null && serviceHoursRemaining <= 100 ? 'Alta' : 'Media',
+            owner: 'Luciana'
+          }
+        });
+      }
 
       return {
         budget,

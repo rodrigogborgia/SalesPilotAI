@@ -11,6 +11,8 @@ import { analyticsRoutes } from './modules/analytics/analytics.routes';
 import { ticketsRoutes } from './modules/tickets/tickets.routes';
 import { budgetsRoutes } from './modules/budgets/budgets.routes';
 import { maintenanceRoutes } from './modules/maintenance/maintenance.routes';
+import { leadsRoutes } from './modules/leads/leads.routes';
+import { followUpsRoutes } from './modules/follow-ups/follow-ups.routes';
 import { adminRoutes } from './modules/admin/admin.routes';
 import {
   authMiddleware,
@@ -42,6 +44,8 @@ app.use('/api/analytics', authMiddleware, internalPanelAccess, analyticsRoutes);
 app.use('/api/portal/tickets', authMiddleware, ticketAccess, ticketsRoutes);
 app.use('/api/budgets', authMiddleware, internalPanelAccess, budgetsRoutes);
 app.use('/api/maintenance', authMiddleware, internalPanelAccess, maintenanceRoutes);
+app.use('/api/leads', authMiddleware, internalPanelAccess, leadsRoutes);
+app.use('/api/follow-ups', authMiddleware, internalPanelAccess, followUpsRoutes);
 app.use(
   '/api/admin',
   authMiddleware,
