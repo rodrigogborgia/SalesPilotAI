@@ -21,6 +21,37 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  async function handleQuickAccess(profile: { firstName: 'David' | 'Luciana' | 'Javier'; role: string; viewMode: 'david' | 'luciana' | 'javier' }) {
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'demo@pro-aire.com', password: 'demo123' })
+      });
+      const result = (await response.json()) as LoginResponse;
+
+      if (!response.ok || !result.token || !result.user) {
+        setError(result.message ?? 'No pudimos iniciar la vista rápida. Verifica que la API esté disponible.');
+        return;
+      }
+
+      const quickUser = { ...result.user, firstName: profile.firstName, role: profile.role };
+      window.localStorage.setItem('salespilot_token', result.token);
+      window.localStorage.setItem('salespilot_user', JSON.stringify(quickUser));
+      window.localStorage.setItem('salespilot_view_mode', profile.viewMode);
+      window.dispatchEvent(new Event('salespilot:auth-changed'));
+      router.push(profile.viewMode === 'javier' ? '/dashboard' : '/simulator');
+    } catch {
+      setError('No se pudo iniciar la vista rápida. Verifica que la API esté disponible.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
@@ -178,6 +209,38 @@ export default function LoginPage() {
               {isSubmitting ? 'Ingresando…' : 'Ingresar a SalesPilotAI'}
             </button>
           </form>
+
+          <div className="mt-7 border-t border-slate-800 pt-6">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Acceso rápido de demostración
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => void handleQuickAccess({ firstName: 'David', role: 'SALES', viewMode: 'david' })}
+                className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-3 text-xs font-bold text-blue-200 transition hover:bg-blue-500/20 disabled:opacity-60"
+              >
+                David · Ventas
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => void handleQuickAccess({ firstName: 'Luciana', role: 'SALES', viewMode: 'luciana' })}
+                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-3 text-xs font-bold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-60"
+              >
+                Luciana · Mantenimiento
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => void handleQuickAccess({ firstName: 'Javier', role: 'OWNER', viewMode: 'javier' })}
+                className="rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-3 text-xs font-bold text-violet-200 transition hover:bg-violet-500/20 disabled:opacity-60"
+              >
+                Javier · Director
+              </button>
+            </div>
+          </div>
 
           <p className="mt-8 text-center text-xs leading-5 text-slate-500">
             Acceso exclusivo para usuarios autorizados de tu organización.

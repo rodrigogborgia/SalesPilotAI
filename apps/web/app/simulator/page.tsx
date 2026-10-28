@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import ThemeToggle from '../../components/ThemeToggle';
 import DemoTour from '../../components/DemoTour';
@@ -279,6 +280,7 @@ function botReply(message: string) {
 }
 
 export default function SimulatorPage() {
+  const router = useRouter();
   const [token, setToken] = useState('');
   const [mounted, setMounted] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -1427,6 +1429,18 @@ export default function SimulatorPage() {
   const wonInMonth = completedInMonth.filter((item) => item.status === 'won').length;
   const closeRate = completedInMonth.length ? Math.round((wonInMonth / completedInMonth.length) * 100) : 0;
   const activeMonthFollowUps = monthFollowUps.filter((item) => item.status !== 'cancelled');
+  function logout() {
+    Object.keys(window.localStorage).forEach((key) => {
+      if (key.startsWith('salespilot_')) window.localStorage.removeItem(key);
+    });
+    document.cookie.split(';').forEach((cookie) => {
+      const name = cookie.split('=')[0]?.trim();
+      if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+    });
+    window.dispatchEvent(new Event('salespilot:auth-changed'));
+    router.push('/login');
+  }
+
   const completionProgress = activeMonthFollowUps.length
     ? Math.min(100, Math.round((completedInMonth.length / activeMonthFollowUps.length) * 100))
     : 0;
@@ -1451,7 +1465,7 @@ export default function SimulatorPage() {
             </span>
           </Link>
           <div className="flex items-center gap-3">
-            {viewMode !== 'luciana' && <button
+            <button
               type="button"
               onClick={() => {
                 setShowQuickLead(true);
@@ -1460,14 +1474,21 @@ export default function SimulatorPage() {
               className="rounded-lg bg-[#1E64FF] px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 sm:px-4 sm:text-sm"
             >
               + Alta Rápida de Prospecto
-            </button>}
+            </button>
             <span className="hidden items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 sm:inline-flex dark:bg-blue-950/40 dark:text-blue-300">
               <span className="h-2 w-2 rounded-full bg-blue-500" /> Alfa Operativa
             </span>
             {ENABLE_SOFIA_CHAT && <DemoTour />}
             <ThemeToggle />
             {viewMode === 'javier' && <Link href="/dashboard" className="text-sm font-semibold text-[#1E64FF]">Dashboard</Link>}
-            <Link href="/portal" className="text-sm font-semibold text-[#1E64FF] hover:text-blue-700">Mi Planta</Link>
+            {viewMode === 'javier' && <Link href="/portal" className="text-sm font-semibold text-[#1E64FF] hover:text-blue-700">Mi Planta</Link>}
+            <button
+              type="button"
+              onClick={logout}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 sm:text-sm"
+            >
+              Cerrar Sesión
+            </button>
           </div>
         </div>
       </header>
