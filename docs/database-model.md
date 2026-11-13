@@ -10,8 +10,9 @@
 - `installed_equipment` y `maintenance_plans` permiten servicio preventivo basado en horómetros.
 - `opportunities` conecta leads, clientes y ventas finalizadas.
 - `budgets` registra presupuestos con estados comerciales estandarizados; `voice_minutes` vincula cada minuta manual con el presupuesto, cliente y equipo actualizados.
+- `sales_invoices` conserva cada línea importada de Bejerman para medir facturación real por responsable y rubro.
 - `customers.lastContactAt` registra el último contacto comercial realizado.
-- `manual_follow_ups` sostiene la agenda operativa de David y Luciana: siete re-contactos de ventas, decisiones de mantenimiento y cancelación de la cadencia al cerrar una oportunidad.
+- `manual_follow_ups` sostiene la agenda operativa de David y Luciana: siete re-contactos de ventas a 2, 7, 14, 21, 30, 45 y 60 días, decisiones de mantenimiento y cancelación de la cadencia al cerrar una oportunidad.
 
 ## 2. Modelo relacional recomendado
 
@@ -25,6 +26,8 @@
 - logo_url: TEXT NULL
 - status: VARCHAR(30) default 'active'
 - settings: JSONB default '{}'
+- monthly_equipment_target: DECIMAL default 80000000
+- monthly_service_parts_target: DECIMAL default 50000000
 - created_at, updated_at
 
 #### users
@@ -158,6 +161,10 @@
 - organization_id: UUID FK -> organizations.id
 - source: VARCHAR(60)
 - source_campaign: VARCHAR(180) NULL
+- customer_type: VARCHAR(30) (`new`, `active`, `reactivated`, `unknown`)
+- request_type: VARCHAR(40) (`new_equipment`, `service_maintenance`, `spare_parts`, `engineering`, `other`)
+- product_id: UUID NULL FK -> products.id; equipo del catálogo
+- equipment_quantity: INTEGER default 1
 - customer_name: VARCHAR(220)
 - contact_title: VARCHAR(200) NULL
 - contact_phone: VARCHAR(60)
@@ -178,6 +185,7 @@
 - sales_owner_user_id: UUID NULL FK -> users.id
 - stage: VARCHAR(50) default 'new'
 - amount: DECIMAL(12,2) default 0
+- quoted_at: TIMESTAMPTZ NULL; fecha de emisión del presupuesto
 - expected_close_date: DATE NULL
 - probability: INTEGER default 0
 - notes: TEXT NULL
@@ -201,12 +209,27 @@
 - id: UUID PK
 - organization_id: UUID FK -> organizations.id
 - budget_id: UUID FK -> budgets.id
-- day_number: INTEGER (`3`, `7` o `15`)
+- day_number: INTEGER (`2`, `7`, `14`, `21`, `30`, `45` o `60`)
 - due_at: TIMESTAMPTZ
 - status: VARCHAR(30) (`scheduled`, `sent`)
 - message: TEXT
 - processed_at: TIMESTAMPTZ NULL
 - UNIQUE (budget_id, day_number)
+
+#### sales_invoices
+- id: UUID PK
+- organization_id: UUID FK -> organizations.id
+- invoice_number: VARCHAR(100)
+- line_number: INTEGER default 1
+- invoice_date: TIMESTAMPTZ
+- customer_email: VARCHAR(255) NULL
+- customer_name: VARCHAR(200)
+- sales_owner: VARCHAR(30) (`David`, `Luciana`)
+- business_unit: VARCHAR(30) (`equipment`, `service`, `spare_parts`)
+- amount: DECIMAL(12,2)
+- equipment_quantity: INTEGER default 0
+- customer_type: VARCHAR(30) (`new`, `active`, `reactivated`, `unknown`)
+- UNIQUE (organization_id, invoice_number, line_number)
 
 #### budget_order_exports
 - id: UUID PK
@@ -261,6 +284,8 @@ CREATE TABLE organizations (
   logo_url TEXT,
   status VARCHAR(30) NOT NULL DEFAULT 'active',
   settings JSONB NOT NULL DEFAULT '{}',
+  monthly_equipment_target NUMERIC(12,2) NOT NULL DEFAULT 80000000,
+  monthly_service_parts_target NUMERIC(12,2) NOT NULL DEFAULT 50000000,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -389,6 +414,10 @@ CREATE TABLE leads (
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   source VARCHAR(60) NOT NULL,
   source_campaign VARCHAR(180),
+  customer_type VARCHAR(30) NOT NULL DEFAULT 'unknown',
+  request_type VARCHAR(40) NOT NULL DEFAULT 'new_equipment',
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  equipment_quantity INTEGER NOT NULL DEFAULT 1,
   customer_name VARCHAR(220) NOT NULL,
   contact_phone VARCHAR(60),
   email VARCHAR(255),
@@ -411,12 +440,30 @@ CREATE TABLE opportunities (
   stage VARCHAR(50) NOT NULL DEFAULT 'new',
   amount NUMERIC(12,2) NOT NULL DEFAULT 0,
   expected_close_date DATE,
+  quoted_at TIMESTAMPTZ,
   probability INTEGER NOT NULL DEFAULT 0,
   notes TEXT,
   won_at TIMESTAMPTZ,
   lost_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE sales_invoices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  invoice_number VARCHAR(100) NOT NULL,
+  line_number INTEGER NOT NULL DEFAULT 1,
+  invoice_date TIMESTAMPTZ NOT NULL,
+  customer_email VARCHAR(255),
+  customer_name VARCHAR(200) NOT NULL,
+  sales_owner VARCHAR(30) NOT NULL,
+  business_unit VARCHAR(30) NOT NULL,
+  amount NUMERIC(12,2) NOT NULL,
+  equipment_quantity INTEGER NOT NULL DEFAULT 0,
+  customer_type VARCHAR(30) NOT NULL DEFAULT 'unknown',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (organization_id, invoice_number, line_number)
 );
 ```
 
@@ -435,6 +482,7 @@ CREATE INDEX idx_conversations_customer_id ON conversations(customer_id);
 CREATE INDEX idx_copilot_references_org_ref ON copilot_references(organization_id, ref_code);
 CREATE INDEX idx_opportunities_organization_stage ON opportunities(organization_id, stage);
 CREATE INDEX idx_opportunities_customer_id ON opportunities(customer_id);
+CREATE INDEX idx_sales_invoices_monthly_owner ON sales_invoices(organization_id, sales_owner, invoice_date);
 ```
 
 ## 5. Prisma schema sugerido
@@ -448,6 +496,8 @@ model Organization {
   logoUrl     String?
   status      String   @default("active")
   settings    Json     @default("{}")
+  monthlyEquipmentTarget Decimal @default("80000000")
+  monthlyServicePartsTarget Decimal @default("50000000")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -459,6 +509,7 @@ model Organization {
   copilotReferences     CopilotReference[]
   leads                Lead[]
   opportunities        Opportunity[]
+  salesInvoices        SalesInvoice[]
   maintenancePlans     MaintenancePlan[]
   installedEquipment   InstalledEquipment[]
 }
@@ -518,6 +569,7 @@ model Product {
   installedEquipment InstalledEquipment[]
   technicalDocuments TechnicalDocument[]
   opportunities     Opportunity[]
+  leads             Lead[]
 }
 
 model Customer {
@@ -653,6 +705,11 @@ model Lead {
   organization      Organization @relation(fields: [organizationId], references: [id])
   source           String
   sourceCampaign   String?
+  customerType     String @default("unknown")
+  requestType      String @default("new_equipment")
+  productId        String?
+  product          Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  equipmentQuantity Int @default(1)
   customerName     String
   contactPhone     String?
   email            String?
@@ -683,12 +740,33 @@ model Opportunity {
   stage             String @default("new")
   amount            Decimal @default("0")
   expectedCloseDate DateTime?
+  quotedAt          DateTime?
   probability       Int @default(0)
   notes             String?
   wonAt             DateTime?
   lostAt            DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+model SalesInvoice {
+  id                String   @id @default(uuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  invoiceNumber     String
+  lineNumber        Int @default(1)
+  invoiceDate       DateTime
+  customerEmail     String?
+  customerName      String
+  salesOwner        String
+  businessUnit      String
+  amount            Decimal
+  equipmentQuantity Int @default(0)
+  customerType      String @default("unknown")
+  createdAt         DateTime @default(now())
+
+  @@unique([organizationId, invoiceNumber, lineNumber])
+  @@index([organizationId, salesOwner, invoiceDate])
 }
 ```
 
@@ -701,7 +779,8 @@ model Opportunity {
 - `installed_equipment` registra la instalación física por cliente y producto.
 - `maintenance_plans` se calculan en función del `current_hours` y `avg_hours_per_day` para obtener alertas de mantenimiento.
 - `opportunities` se alimenta desde tanto `lead` como `customer`, con `stage`, `probability` y `amount`.
-- La captura manual crea un `Lead`, una `Opportunity` con el importe y producto estimados y una cadencia de hasta siete `ManualFollowUp` asignados a David. El paso a `03 - Cotizado` garantiza la cadencia si aún no existe.
+- La captura manual crea un `Lead` con canal, campaña, tipo de cliente, requerimiento y producto del catálogo; también crea una `Opportunity` y siete `ManualFollowUp` para el usuario activo a los 2, 7, 14, 21, 30, 45 y 60 días. El paso a `03 - Cotizado` garantiza la cadencia si aún no existe.
+- `SalesInvoice` almacena líneas importadas de Bejerman. El dashboard agrega el mes calendario de Argentina por responsable, y conserva `customerType` para separar clientes nuevos, activos y reactivados.
 - `ManualFollowUp` mantiene agenda, prioridad, responsable, minuta, resultado y fecha de cierre en la base de la organización, además de nombre/cargo/email del contacto. Los cierres de oportunidades validan el motivo estándar y cancelan el resto de la cadencia; el check-in de Luciana puede re-agendar sin presupuesto o programar el seguimiento y el próximo service.
 - Las tarjetas de agenda presentan la ficha de contacto y la última minuta o comentario previo, usando la fecha de actualización del seguimiento, prospecto o referencia.
 - El simulador y el dashboard consumen estos registros mediante `/api/follow-ups`; `/api/leads` crea, lista y actualiza prospectos. Ambos recursos requieren sesión y filtran por organización.

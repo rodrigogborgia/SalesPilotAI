@@ -2,18 +2,33 @@ import { Router } from 'express';
 import { Prisma } from '@prisma/client';
 
 import prisma from '../../lib/prisma';
+import { getMonthlyCommercialKpis } from '../analytics/commercialKpis.service';
 
 export const leadsRoutes = Router();
 
 const salesCadence = [
-  { day: 3, message: 'Primer re-contacto comercial.' },
-  { day: 7, message: 'Segundo re-contacto comercial.' },
-  { day: 15, message: 'Tercer re-contacto comercial.' },
-  { day: 21, message: 'Cuarto re-contacto comercial.' },
-  { day: 30, message: 'Quinto re-contacto comercial.' },
-  { day: 45, message: 'Sexto re-contacto comercial.' },
-  { day: 60, message: 'Séptimo re-contacto comercial.' }
+  { day: 2, message: 'Primer contacto de seguimiento · 48 horas.' },
+  { day: 7, message: 'Segundo seguimiento comercial.' },
+  { day: 14, message: 'Tercer seguimiento comercial.' },
+  { day: 21, message: 'Cuarto seguimiento comercial.' },
+  { day: 30, message: 'Quinto seguimiento comercial.' },
+  { day: 45, message: 'Sexto seguimiento comercial.' },
+  { day: 60, message: 'Séptimo seguimiento comercial.' }
 ] as const;
+
+const leadSources = [
+  'WhatsApp Meta - 8 Cheques',
+  'WhatsApp Meta - Galicia',
+  'Remarketing Inactivos',
+  'Web / Formulario',
+  'Correo Electrónico',
+  'Redes Sociales (IG/FB)',
+  'Outbound / Guía Industria',
+  'Referido / Cliente Actual',
+  'Otro'
+] as const;
+const customerTypes = ['new', 'active', 'reactivated', 'unknown'] as const;
+const requestTypes = ['new_equipment', 'service_maintenance', 'spare_parts', 'engineering', 'other'] as const;
 
 function nonEmptyString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= maxLength;
@@ -23,11 +38,40 @@ function validOptionalString(value: unknown, maxLength: number): value is string
   return value === undefined || (typeof value === 'string' && value.length <= maxLength);
 }
 
+leadsRoutes.get('/my-monthly-kpis', async (req, res, next) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.auth!.userId,
+        organizationId: req.auth!.organizationId,
+        status: 'active',
+        role: 'SALES'
+      },
+      select: { firstName: true }
+    });
+    if (!user || (user.firstName !== 'David' && user.firstName !== 'Luciana')) {
+      res.status(403).json({ message: 'No hay indicadores personales disponibles para este usuario.' });
+      return;
+    }
+
+    const monthlyKpis = await getMonthlyCommercialKpis(req.auth!.organizationId);
+    const personalMetrics = monthlyKpis.people.find((person) => person.owner === user.firstName);
+    if (!personalMetrics) throw new Error('No se pudieron obtener los indicadores mensuales del usuario.');
+    res.status(200).json({ monthStart: monthlyKpis.monthStart, ...personalMetrics });
+  } catch (error) {
+    next(error);
+  }
+});
+
 leadsRoutes.get('/', async (req, res, next) => {
   try {
     const leads = await prisma.lead.findMany({
       where: { organizationId: req.auth!.organizationId },
-      include: { opportunities: true },
+      include: {
+        opportunities: true,
+        product: { select: { id: true, sku: true, name: true } },
+        assignedToUser: { select: { id: true, firstName: true } }
+      },
       orderBy: { createdAt: 'desc' }
     });
     res.status(200).json(leads);
@@ -46,9 +90,16 @@ leadsRoutes.post('/', async (req, res, next) => {
     productInterest?: unknown;
     estimatedAmount?: unknown;
     sourceMessage?: unknown;
+    source?: unknown;
+    sourceCampaign?: unknown;
+    customerType?: unknown;
+    requestType?: unknown;
+    productId?: unknown;
+    equipmentQuantity?: unknown;
   };
   const amount = body.estimatedAmount;
   const numericAmount = typeof amount === 'number' || typeof amount === 'string' ? Number(amount) : 0;
+  const equipmentQuantity = body.equipmentQuantity === undefined ? 1 : Number(body.equipmentQuantity);
 
   if (
     !nonEmptyString(body.customerName, 200) ||
@@ -59,6 +110,13 @@ leadsRoutes.post('/', async (req, res, next) => {
     (typeof body.email === 'string' && body.email.trim() !== '' &&
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim())) ||
     !validOptionalString(body.productInterest, 200) ||
+    (body.source !== undefined && !leadSources.includes(body.source as typeof leadSources[number])) ||
+    !validOptionalString(body.sourceCampaign, 200) ||
+    (body.customerType !== undefined && !customerTypes.includes(body.customerType as typeof customerTypes[number])) ||
+    (body.requestType !== undefined && !requestTypes.includes(body.requestType as typeof requestTypes[number])) ||
+    (body.productId !== undefined && body.productId !== null &&
+      (typeof body.productId !== 'string' || body.productId.length > 80)) ||
+    !Number.isInteger(equipmentQuantity) || equipmentQuantity < 0 || equipmentQuantity > 10000 ||
     !Number.isFinite(numericAmount) ||
     numericAmount < 0 ||
     !validOptionalString(body.sourceMessage, 10000)
@@ -70,26 +128,72 @@ leadsRoutes.post('/', async (req, res, next) => {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const david = await tx.user.findFirst({
+      const currentUser = await tx.user.findFirst({
         where: {
+          id: req.auth!.userId,
           organizationId: req.auth!.organizationId,
-          firstName: { equals: 'David' },
-          role: 'SALES',
           status: 'active'
         },
-        orderBy: { createdAt: 'asc' }
+        select: { id: true, firstName: true }
       });
+      const defaultOwnerName = currentUser?.firstName === 'Luciana' ? 'Luciana' : 'David';
+      const assignedUser = currentUser?.firstName === 'David' || currentUser?.firstName === 'Luciana'
+        ? currentUser
+        : await tx.user.findFirst({
+            where: {
+              organizationId: req.auth!.organizationId,
+              firstName: defaultOwnerName,
+              role: 'SALES',
+              status: 'active'
+            },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, firstName: true }
+          });
+      let product = null;
+      if (typeof body.productId === 'string' && body.productId.trim()) {
+        product = await tx.product.findFirst({
+          where: {
+            id: body.productId.trim(),
+            organizationId: req.auth!.organizationId,
+            isActive: true
+          },
+          select: { id: true, name: true }
+        });
+        if (!product) return { productUnavailable: true as const };
+      }
+      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+      let customerType = typeof body.customerType === 'string' ? body.customerType : 'unknown';
+      if (customerType === 'unknown' && email) {
+        const lastSale = await tx.completedSale.findUnique({
+          where: { organizationId_email: { organizationId: req.auth!.organizationId, email } },
+          select: { purchaseDate: true }
+        });
+        if (lastSale) {
+          customerType = Date.now() - lastSale.purchaseDate.getTime() > 360 * 24 * 60 * 60 * 1000
+            ? 'reactivated'
+            : 'active';
+        }
+      }
+      const productName = product?.name ??
+        (typeof body.productInterest === 'string' ? body.productInterest.trim() : '');
+      const ownerId = assignedUser?.id ?? req.auth!.userId;
+      const ownerName = assignedUser?.firstName ?? defaultOwnerName;
       const lead = await tx.lead.create({
         data: {
           organizationId: req.auth!.organizationId,
-          assignedToUserId: david?.id ?? req.auth!.userId,
-          source: 'manual_quick_add',
+          assignedToUserId: ownerId,
+          source: typeof body.source === 'string' ? body.source : 'manual_quick_add',
+          sourceCampaign: typeof body.sourceCampaign === 'string' ? body.sourceCampaign.trim() || null : null,
           customerName,
           contactTitle: typeof body.contactTitle === 'string' ? body.contactTitle.trim() || null : null,
           companyName: typeof body.companyName === 'string' ? body.companyName.trim() || null : null,
           contactPhone: typeof body.phone === 'string' ? body.phone.trim() || null : null,
-          email: typeof body.email === 'string' ? body.email.trim() || null : null,
-          productInterest: typeof body.productInterest === 'string' ? body.productInterest.trim() || null : null,
+          email: email || null,
+          customerType,
+          requestType: typeof body.requestType === 'string' ? body.requestType : 'new_equipment',
+          productId: product?.id ?? null,
+          equipmentQuantity,
+          productInterest: productName || null,
           estimatedAmount: new Prisma.Decimal(numericAmount),
           notes: typeof body.sourceMessage === 'string' ? body.sourceMessage.trim() || null : null
         }
@@ -99,29 +203,30 @@ leadsRoutes.post('/', async (req, res, next) => {
         data: {
           organizationId: req.auth!.organizationId,
           leadId: lead.id,
-          salesOwnerUserId: david?.id ?? req.auth!.userId,
+          productId: product?.id ?? null,
+          salesOwnerUserId: ownerId,
           stage: 'new',
           amount: amountValue,
           probability: 10,
-          notes: lead.productInterest ? `Producto de interés: ${lead.productInterest}` : null
+          notes: productName ? `Producto de interés: ${productName}` : null
         }
       });
       const dueAt = new Date();
-      dueAt.setDate(dueAt.getDate() + 3);
+      dueAt.setDate(dueAt.getDate() + salesCadence[0].day);
       const followUp = await tx.manualFollowUp.create({
         data: {
           organizationId: req.auth!.organizationId,
           leadId: lead.id,
-          assignedToUserId: david?.id ?? req.auth!.userId,
+          assignedToUserId: ownerId,
           customer: lead.companyName ?? lead.customerName,
           contactName: lead.customerName,
           contactTitle: lead.contactTitle,
           email: lead.email,
           phone: lead.contactPhone ?? '',
-          reason: `Primer seguimiento · ${lead.productInterest ?? 'nuevo prospecto'}`,
+          reason: `${salesCadence[0].message} · ${productName || 'nuevo prospecto'}`,
           dueAt,
           priority: 'Media',
-          owner: 'David'
+          owner: ownerName
         }
       });
       await tx.manualFollowUp.createMany({
@@ -131,21 +236,25 @@ leadsRoutes.post('/', async (req, res, next) => {
           return {
             organizationId: req.auth!.organizationId,
             leadId: lead.id,
-            assignedToUserId: david?.id ?? req.auth!.userId,
+            assignedToUserId: ownerId,
             customer: lead.companyName ?? lead.customerName,
             contactName: lead.customerName,
             contactTitle: lead.contactTitle,
             email: lead.email,
             phone: lead.contactPhone ?? '',
-            reason: `${message} · ${lead.productInterest ?? 'nuevo prospecto'}`,
+            reason: `${message} · ${productName || 'nuevo prospecto'}`,
             dueAt: scheduledAt,
             priority: 'Media',
-            owner: 'David'
+            owner: ownerName
           };
         })
       });
-      return { lead, opportunity, followUp, followUps: 7 };
+      return { lead, opportunity, followUp, followUps: salesCadence.length };
     });
+    if ('productUnavailable' in result) {
+      res.status(404).json({ message: 'El producto seleccionado ya no está disponible en el catálogo.' });
+      return;
+    }
     res.status(201).json(result);
   } catch (error) {
     next(error);
@@ -163,7 +272,8 @@ leadsRoutes.patch('/:leadId/stage', async (req, res, next) => {
   try {
     const result = await prisma.$transaction(async (tx) => {
       const lead = await tx.lead.findFirst({
-        where: { id: req.params.leadId, organizationId: req.auth!.organizationId }
+        where: { id: req.params.leadId, organizationId: req.auth!.organizationId },
+        include: { assignedToUser: { select: { firstName: true } } }
       });
       if (!lead) return null;
 
@@ -182,6 +292,8 @@ leadsRoutes.patch('/:leadId/stage', async (req, res, next) => {
             leadId: lead.id,
             salesOwnerUserId: lead.assignedToUserId ?? req.auth!.userId,
             stage,
+            quotedAt: new Date(),
+            productId: lead.productId,
             amount: lead.estimatedAmount ?? new Prisma.Decimal(0),
             probability: 50
           }
@@ -189,24 +301,29 @@ leadsRoutes.patch('/:leadId/stage', async (req, res, next) => {
       }
 
       await tx.lead.update({ where: { id: lead.id }, data: { status: stage } });
+      if (opportunity) {
+        await tx.opportunity.update({
+          where: { id: opportunity.id },
+          data: { quotedAt: opportunity.quotedAt ?? new Date(), productId: lead.productId }
+        });
+      }
       const existingCadence = await tx.manualFollowUp.count({
         where: { organizationId: req.auth!.organizationId, leadId: lead.id }
       });
       if (existingCadence < salesCadence.length) {
-        const david = await tx.user.findFirst({
+        const assignedUser = await tx.user.findFirst({
           where: {
             organizationId: req.auth!.organizationId,
-            firstName: 'David',
+            firstName: lead.assignedToUser?.firstName ?? 'David',
             role: 'SALES',
             status: 'active'
           },
           orderBy: { createdAt: 'asc' }
         });
-        const assignedToUserId = david?.id ?? lead.assignedToUserId ?? req.auth!.userId;
-        const dueAt = new Date();
+        const assignedToUserId = assignedUser?.id ?? lead.assignedToUserId ?? req.auth!.userId;
         await tx.manualFollowUp.createMany({
           data: salesCadence.slice(existingCadence).map(({ day, message }) => {
-            const scheduledAt = new Date(dueAt);
+            const scheduledAt = new Date(lead.createdAt);
             scheduledAt.setDate(scheduledAt.getDate() + day);
             return {
               organizationId: req.auth!.organizationId,
@@ -217,7 +334,7 @@ leadsRoutes.patch('/:leadId/stage', async (req, res, next) => {
               reason: `${message} · ${lead.productInterest ?? 'oportunidad cotizada'}`,
               dueAt: scheduledAt,
               priority: 'Media',
-              owner: 'David'
+              owner: assignedUser?.firstName === 'Luciana' ? 'Luciana' : 'David'
             };
           })
         });

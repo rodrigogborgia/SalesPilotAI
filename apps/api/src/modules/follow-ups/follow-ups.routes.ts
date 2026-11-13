@@ -9,6 +9,40 @@ const priorities = ['Alta', 'Media', 'Baja'];
 const owners = ['David', 'Luciana'];
 const statuses = ['scheduled', 'completed', 'won', 'lost'];
 
+followUpsRoutes.get('/reactivation-candidates', async (req, res, next) => {
+  try {
+    const cutoff = new Date(Date.now() - 360 * 24 * 60 * 60 * 1000);
+    const candidates = await prisma.completedSale.findMany({
+      where: { organizationId: req.auth!.organizationId, purchaseDate: { lt: cutoff } },
+      orderBy: [{ purchaseDate: 'asc' }, { company: 'asc' }]
+    });
+    const candidateEmails = candidates.map((candidate) => candidate.email);
+    const scheduled = candidateEmails.length
+      ? await prisma.manualFollowUp.findMany({
+          where: {
+            organizationId: req.auth!.organizationId,
+            owner: 'Luciana',
+            status: 'scheduled',
+            email: { in: candidateEmails },
+            reason: { startsWith: 'Reactivación comercial' }
+          },
+          select: { email: true }
+        })
+      : [];
+    const scheduledEmails = new Set(scheduled.flatMap((item) => item.email ? [item.email] : []));
+    res.status(200).json(candidates
+      .filter((candidate) => !scheduledEmails.has(candidate.email))
+      .map((candidate) => ({
+        email: candidate.email,
+        phone: candidate.phone,
+        company: candidate.company,
+        lastPurchaseAt: candidate.purchaseDate
+      })));
+  } catch (error) {
+    next(error);
+  }
+});
+
 function isOptionalText(value: unknown, maxLength: number): value is string | undefined {
   return value === undefined || (typeof value === 'string' && value.length <= maxLength);
 }
@@ -99,6 +133,23 @@ followUpsRoutes.post('/', async (req, res, next) => {
       orderBy: { createdAt: 'asc' },
       select: { id: true }
     });
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    if (owner === 'Luciana' && body.reason.trim().startsWith('Reactivación comercial') && email) {
+      const existingReactivation = await prisma.manualFollowUp.findFirst({
+        where: {
+          organizationId: req.auth!.organizationId,
+          owner: 'Luciana',
+          status: 'scheduled',
+          email,
+          reason: { startsWith: 'Reactivación comercial' }
+        },
+        select: { id: true }
+      });
+      if (existingReactivation) {
+        res.status(409).json({ message: 'Ya existe una llamada de reactivación pendiente para este cliente.' });
+        return;
+      }
+    }
     const followUp = await prisma.manualFollowUp.create({
       data: {
         organizationId: req.auth!.organizationId,
@@ -107,7 +158,7 @@ followUpsRoutes.post('/', async (req, res, next) => {
         customer: body.customer.trim(),
         contactName: typeof body.contactName === 'string' ? body.contactName.trim() || null : null,
         contactTitle: typeof body.contactTitle === 'string' ? body.contactTitle.trim() || null : null,
-        email: typeof body.email === 'string' ? body.email.trim().toLowerCase() || null : null,
+        email: email || null,
         phone: typeof body.phone === 'string' ? body.phone.trim() : '',
         reason: body.reason.trim(),
         dueAt,

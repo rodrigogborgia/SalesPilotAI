@@ -15,6 +15,8 @@ model Organization {
   logoUrl   String?
   status    String   @default("active")
   settings  Json
+  monthlyEquipmentTarget   Decimal  @default("80000000")
+  monthlyServicePartsTarget Decimal  @default("50000000")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -40,6 +42,7 @@ model Organization {
   voiceMinutes       VoiceMinute[]
   metaAudienceEntries MetaAudienceEntry[]
   completedSales     CompletedSale[]
+  salesInvoices      SalesInvoice[]
 
   @@index([status])
 }
@@ -115,6 +118,7 @@ model Product {
   installedEquipment InstalledEquipment[]
   technicalDocuments TechnicalDocument[]
   opportunities      Opportunity[]
+  leads              Lead[]
 
   @@unique([organizationId, sku])
   @@index([organizationId, isActive])
@@ -250,6 +254,11 @@ model Lead {
   contactPhone   String?
   email          String?
   companyName    String?
+  customerType   String   @default("unknown")
+  requestType    String   @default("new_equipment")
+  productId      String?
+  product        Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  equipmentQuantity Int @default(1)
   status         String   @default("new")
   score          Int      @default(0)
   notes          String?
@@ -262,6 +271,7 @@ model Lead {
   manualFollowUps ManualFollowUp[]
 
   @@index([organizationId, status])
+  @@index([organizationId, customerType])
 }
 
 model ManualFollowUp {
@@ -313,6 +323,7 @@ model Opportunity {
   stage             String    @default("new")
   amount            Decimal   @default("0.00")
   expectedCloseDate DateTime?
+  quotedAt          DateTime?
   probability       Int       @default(0)
   notes             String?
   wonAt             DateTime?
@@ -458,6 +469,30 @@ model CompletedSale {
 
   @@unique([organizationId, email])
   @@index([organizationId, purchaseDate])
+}
+
+model SalesInvoice {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  invoiceNumber     String
+  lineNumber        Int      @default(1)
+  invoiceDate       DateTime
+  customerEmail     String?
+  customerName      String
+  salesOwner        String
+  businessUnit      String
+  amount            Decimal
+  equipmentQuantity Int      @default(0)
+  customerType      String   @default("unknown")
+  createdAt         DateTime @default(now())
+
+  @@unique([organizationId, invoiceNumber, lineNumber])
+  @@index([organizationId, invoiceDate])
+  @@index([organizationId, salesOwner, invoiceDate])
+  @@index([organizationId, businessUnit, invoiceDate])
+  @@index([organizationId, customerEmail, invoiceDate])
 }
 
 model Conversation {

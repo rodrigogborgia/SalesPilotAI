@@ -45,13 +45,17 @@ async function main() {
       update: {
         name: 'Pro-Aire Industrial',
         brandName: 'Pro-Aire',
-        settings: {}
+        settings: {},
+        monthlyEquipmentTarget: '80000000',
+        monthlyServicePartsTarget: '50000000'
       },
       create: {
         name: 'Pro-Aire Industrial',
         slug: 'pro-aire-industrial',
         brandName: 'Pro-Aire',
-        settings: {}
+        settings: {},
+        monthlyEquipmentTarget: '80000000',
+        monthlyServicePartsTarget: '50000000'
       }
     });
 

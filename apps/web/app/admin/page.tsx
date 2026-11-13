@@ -31,6 +31,19 @@ type SalesAudiences = {
   topOfMind: CompletedSale[];
 };
 
+type CommercialInvoiceImport = {
+  invoiceNumber: string;
+  lineNumber: number;
+  invoiceDate: string;
+  email: string;
+  company: string;
+  salesOwner: 'David' | 'Luciana';
+  businessUnit: 'equipment' | 'service' | 'spare_parts';
+  amount: number;
+  equipmentQuantity: number;
+  customerType?: 'new' | 'active' | 'reactivated' | 'unknown';
+};
+
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const currency = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 
@@ -39,6 +52,16 @@ function parseCsv(text: string): string[][] {
   let row: string[] = [];
   let cell = '';
   let quoted = false;
+  const firstLine = text.split(/\r?\n/, 1)[0] ?? '';
+  let commaCount = 0;
+  let semicolonCount = 0;
+  let inHeaderQuote = false;
+  for (let index = 0; index < firstLine.length; index += 1) {
+    if (firstLine[index] === '"') inHeaderQuote = !inHeaderQuote;
+    else if (!inHeaderQuote && firstLine[index] === ',') commaCount += 1;
+    else if (!inHeaderQuote && firstLine[index] === ';') semicolonCount += 1;
+  }
+  const delimiter = semicolonCount > commaCount ? ';' : ',';
 
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index];
@@ -47,7 +70,7 @@ function parseCsv(text: string): string[][] {
       index += 1;
     } else if (character === '"') {
       quoted = !quoted;
-    } else if (!quoted && character === ',') {
+    } else if (!quoted && character === delimiter) {
       row.push(cell.trim());
       cell = '';
     } else if (!quoted && (character === '\n' || character === '\r')) {
@@ -122,6 +145,94 @@ function readSalesCsv(text: string) {
   });
 }
 
+function readInvoicesCsv(text: string): CommercialInvoiceImport[] {
+  const rows = parseCsv(text);
+  if (rows.length < 2) throw new Error('El CSV debe incluir encabezados y al menos una línea de factura.');
+
+  const headers = rows[0].map(normalizeHeader);
+  const column = (aliases: string[]) => headers.findIndex((header) => aliases.includes(header));
+  const invoiceColumn = column(['numerodefactura', 'nrofactura', 'numerodecomprobante', 'nrocomprobante', 'comprobante', 'invoice', 'invoicenumber']);
+  const lineColumn = column(['linea', 'lineanro', 'linenumber', 'item']);
+  const dateColumn = column(['fechadefactura', 'fechadeemision', 'fechaemision', 'fecha', 'invoicedate']);
+  const emailColumn = column(['email', 'correo', 'correoelectronico']);
+  const companyColumn = column(['empresa', 'cliente', 'razonsocial', 'company', 'customer']);
+  const ownerColumn = column(['responsable', 'vendedor', 'salesowner', 'owner']);
+  const unitColumn = column(['rubro', 'tipodeventa', 'unidaddenegocio', 'businessunit', 'categoria']);
+  const amountColumn = column(['monto', 'importe', 'total', 'totalfactura', 'amount', 'value']);
+  const equipmentQuantityColumn = column(['equipos', 'cantidaddeequipos', 'equipmentquantity', 'cantidad']);
+  const customerTypeColumn = column(['tipodecliente', 'customertype', 'clientetype']);
+
+  if ([invoiceColumn, dateColumn, companyColumn, ownerColumn, unitColumn, amountColumn].some((index) => index < 0)) {
+    throw new Error('Faltan columnas requeridas: Número de Factura, Fecha, Empresa, Responsable, Rubro y Monto.');
+  }
+
+  const normalizeOwner = (value: string): CommercialInvoiceImport['salesOwner'] | null => {
+    const owner = value.trim().toLocaleLowerCase('es-AR');
+    return owner === 'david' ? 'David' : owner === 'luciana' ? 'Luciana' : null;
+  };
+  const normalizeUnit = (value: string): CommercialInvoiceImport['businessUnit'] | null => {
+    const unit = normalizeHeader(value);
+    if (['equipo', 'equipos', 'equiponuevo', 'equipment'].includes(unit)) return 'equipment';
+    if (['servicio', 'servicios', 'service', 'mantenimiento', 'serviciomantenimiento'].includes(unit)) return 'service';
+    if (['repuesto', 'repuestos', 'spareparts', 'sparepart'].includes(unit)) return 'spare_parts';
+    return null;
+  };
+  const normalizeCustomerType = (value: string): CommercialInvoiceImport['customerType'] | null => {
+    const type = normalizeHeader(value);
+    if (!type) return undefined;
+    if (['nuevo', 'nueva', 'new', 'clientenuevo'].includes(type)) return 'new';
+    if (['activo', 'active', 'clienteactivo'].includes(type)) return 'active';
+    if (['reactivado', 'reactivada', 'reactivated'].includes(type)) return 'reactivated';
+    if (['desconocido', 'sinhistorial', 'unknown'].includes(type)) return 'unknown';
+    return null;
+  };
+
+  return rows.slice(1).map((values, index) => {
+    const lineNumberValue = lineColumn >= 0 ? (values[lineColumn] ?? '').trim() : '';
+    const lineNumber = lineNumberValue ? Number(lineNumberValue) : 1;
+    const invoiceDate = parsePurchaseDate(values[dateColumn] ?? '');
+    const email = emailColumn >= 0 ? (values[emailColumn] ?? '').trim().toLowerCase() : '';
+    const company = (values[companyColumn] ?? '').trim();
+    const salesOwner = normalizeOwner(values[ownerColumn] ?? '');
+    const businessUnit = normalizeUnit(values[unitColumn] ?? '');
+    const amount = parseAmount(values[amountColumn] ?? '');
+    const equipmentQuantity = equipmentQuantityColumn >= 0
+      ? Number((values[equipmentQuantityColumn] ?? '').trim() || 0)
+      : businessUnit === 'equipment' ? 1 : 0;
+    const customerType = customerTypeColumn >= 0
+      ? normalizeCustomerType(values[customerTypeColumn] ?? '')
+      : undefined;
+
+    if (
+      !(values[invoiceColumn] ?? '').trim() ||
+      !Number.isInteger(lineNumber) || lineNumber < 1 ||
+      Number.isNaN(Date.parse(invoiceDate)) ||
+      (email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ||
+      !company || !salesOwner || !businessUnit ||
+      !Number.isFinite(amount) || amount < 0 ||
+      !Number.isInteger(equipmentQuantity) || equipmentQuantity < 0 ||
+      (businessUnit === 'equipment' && equipmentQuantity < 1) ||
+      (businessUnit !== 'equipment' && equipmentQuantity !== 0) ||
+      customerType === null
+    ) {
+      throw new Error(`Revisa Número de Factura, Línea, Fecha, Empresa, Responsable, Rubro, Monto y Cantidad en la fila ${index + 2}.`);
+    }
+
+    return {
+      invoiceNumber: (values[invoiceColumn] ?? '').trim(),
+      lineNumber,
+      invoiceDate,
+      email,
+      company,
+      salesOwner,
+      businessUnit,
+      amount,
+      equipmentQuantity,
+      ...(customerType ? { customerType } : {})
+    };
+  });
+}
+
 export default function AdminPage() {
   const [token, setToken] = useState('');
   const [authorized, setAuthorized] = useState(false);
@@ -139,6 +250,8 @@ export default function AdminPage() {
   const [activeSalesTab, setActiveSalesTab] = useState<'lookalike' | 'topOfMind'>('lookalike');
   const [salesFile, setSalesFile] = useState<File | null>(null);
   const [isImportingSales, setIsImportingSales] = useState(false);
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [isImportingInvoices, setIsImportingInvoices] = useState(false);
 
   useEffect(() => {
     const savedToken = localStorage.getItem('salespilot_token') ?? '';
@@ -203,6 +316,38 @@ export default function AdminPage() {
       setError(importError instanceof Error ? importError.message : 'No se pudieron importar las ventas.');
     } finally {
       setIsImportingSales(false);
+    }
+  }
+
+  async function importInvoices() {
+    if (!invoiceFile) return;
+    setIsImportingInvoices(true);
+    setError('');
+    setNotice('');
+    try {
+      const invoices = readInvoicesCsv(await invoiceFile.text());
+      const response = await fetch(`${apiUrl}/api/admin/invoices-import`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ invoices })
+      });
+      const result = await response.json() as { importedCount?: number; created?: number; updated?: number; message?: string };
+      if (!response.ok || typeof result.importedCount !== 'number') {
+        throw new Error(result.message ?? 'No se pudieron importar las facturas.');
+      }
+      setInvoiceFile(null);
+      setNotice(
+        'Facturas procesadas: ' + result.importedCount + ' líneas (' +
+        (result.created ?? 0) + ' nuevas, ' + (result.updated ?? 0) +
+        ' actualizadas). El dashboard mensual ya usa estos importes facturados.'
+      );
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : 'No se pudieron importar las facturas.');
+    } finally {
+      setIsImportingInvoices(false);
     }
   }
 
@@ -390,6 +535,26 @@ export default function AdminPage() {
               {isImportingSales ? 'Importando…' : 'Importar ventas'}
             </button>
             {salesFile && <span className="basis-full text-xs text-slate-500">{salesFile.name}</span>}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 p-4 dark:border-emerald-900 dark:bg-emerald-950/10">
+            <div className="min-w-0 flex-1">
+              <label htmlFor="invoice-csv" className="block text-sm font-bold">Importar facturas de Bejerman (CSV)</label>
+              <p className="mt-1 text-xs text-slate-500">Una línea por rubro: Número de Factura, Línea (opcional), Fecha, Empresa, Email (opcional), Responsable (David/Luciana), Rubro (Equipo/Servicio/Repuestos), Monto y Cantidad de equipos. Tipo de cliente es opcional; se infiere con el historial disponible.</p>
+            </div>
+            <input
+              id="invoice-csv"
+              type="file"
+              accept=".csv,text/csv"
+              disabled={!authorized || isImportingInvoices}
+              onChange={(event) => setInvoiceFile(event.target.files?.[0] ?? null)}
+              className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-100 file:px-3 file:py-2 file:text-xs file:font-bold file:text-emerald-900 disabled:opacity-50 dark:file:bg-emerald-950/60 dark:file:text-emerald-200"
+            />
+            <button type="button" onClick={() => void importInvoices()} disabled={!authorized || !invoiceFile || isImportingInvoices} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+              {isImportingInvoices ? 'Importando…' : 'Importar facturas'}
+            </button>
+            {invoiceFile && <span className="basis-full text-xs text-slate-500">{invoiceFile.name}</span>}
+            <p className="basis-full text-xs text-slate-500">Formato de fecha: DD/MM/AAAA. Líneas repetidas del mismo número de factura se actualizan de forma idempotente.</p>
           </div>
 
           <div className="mt-6 border-b border-slate-200 dark:border-slate-700">

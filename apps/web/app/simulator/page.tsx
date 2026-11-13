@@ -131,14 +131,48 @@ type Lead = {
   email: string | null;
   notes: string | null;
   productInterest: string | null;
+  source: string;
+  sourceCampaign: string | null;
+  customerType: string;
+  requestType: string;
+  equipmentQuantity: number;
   estimatedAmount: string | number | null;
   status: string;
   opportunities: Array<{ id: string; stage: string }>;
 };
 
+type CatalogProduct = {
+  id: string;
+  sku: string;
+  name: string;
+  category: { id: string; name: string } | null;
+};
+
+type ReactivationCandidate = {
+  email: string;
+  phone: string | null;
+  company: string;
+  lastPurchaseAt: string;
+};
+
+type PersonalMonthlyKpis = {
+  owner: 'David' | 'Luciana';
+  monthStart: string;
+  monthlyTarget: number;
+  billedAmount: number;
+  targetCompletionPercent: number;
+  equipmentUnits: number;
+  quotesIssued: number;
+  acceptedQuotes: number;
+  quoteConversionPercent: number;
+  newCustomers: number;
+  reactivatedCustomers: number;
+};
+
 type SimulatorModule = 'budgets' | 'maintenance' | 'customers' | 'copilot' | 'followups';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const currency = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 const budgetStatuses = [
   '01 - Enviado',
   '02 - En Seguimiento',
@@ -151,6 +185,30 @@ const lossReasons = [
   'Tiempo de Entrega',
   'Competencia',
   'Financiamiento'
+] as const;
+const leadSources = [
+  'WhatsApp Meta - 8 Cheques',
+  'WhatsApp Meta - Galicia',
+  'Remarketing Inactivos',
+  'Web / Formulario',
+  'Correo Electrónico',
+  'Redes Sociales (IG/FB)',
+  'Outbound / Guía Industria',
+  'Referido / Cliente Actual',
+  'Otro'
+] as const;
+const customerTypes = [
+  { value: 'new', label: 'Cliente nuevo' },
+  { value: 'active', label: 'Cliente activo' },
+  { value: 'reactivated', label: 'Reactivado · +360 días' },
+  { value: 'unknown', label: 'Sin historial confirmado' }
+] as const;
+const requestTypes = [
+  { value: 'new_equipment', label: 'Equipo nuevo' },
+  { value: 'service_maintenance', label: 'Service / mantenimiento' },
+  { value: 'spare_parts', label: 'Repuestos' },
+  { value: 'engineering', label: 'Auditoría / ingeniería' },
+  { value: 'other', label: 'Otro' }
 ] as const;
 
 function timeNow() {
@@ -283,6 +341,9 @@ export default function SimulatorPage() {
   const router = useRouter();
   const [token, setToken] = useState('');
   const [mounted, setMounted] = useState(false);
+  const [personalMonthlyKpis, setPersonalMonthlyKpis] = useState<PersonalMonthlyKpis | null>(null);
+  const [monthlyKpisError, setMonthlyKpisError] = useState('');
+  const [isLoadingMonthlyKpis, setIsLoadingMonthlyKpis] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -385,7 +446,13 @@ export default function SimulatorPage() {
   const [quickLeadCompany, setQuickLeadCompany] = useState('');
   const [quickLeadPhone, setQuickLeadPhone] = useState('');
   const [quickLeadEmail, setQuickLeadEmail] = useState('');
-  const [quickLeadProduct, setQuickLeadProduct] = useState('');
+  const [quickLeadProductId, setQuickLeadProductId] = useState('');
+  const [quickLeadProductDetail, setQuickLeadProductDetail] = useState('');
+  const [quickLeadSource, setQuickLeadSource] = useState<(typeof leadSources)[number]>('Web / Formulario');
+  const [quickLeadCampaign, setQuickLeadCampaign] = useState('');
+  const [quickLeadCustomerType, setQuickLeadCustomerType] = useState<(typeof customerTypes)[number]['value']>('unknown');
+  const [quickLeadRequestType, setQuickLeadRequestType] = useState<(typeof requestTypes)[number]['value']>('new_equipment');
+  const [quickLeadEquipmentQuantity, setQuickLeadEquipmentQuantity] = useState('1');
   const [quickLeadAmount, setQuickLeadAmount] = useState('');
   const [isSavingQuickLead, setIsSavingQuickLead] = useState(false);
   const [emailDraft, setEmailDraft] = useState('');
@@ -395,6 +462,8 @@ export default function SimulatorPage() {
   const [demoStep, setDemoStep] = useState('');
   const [maintenanceEquipment, setMaintenanceEquipment] = useState<MaintenanceEquipment[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [reactivationCandidates, setReactivationCandidates] = useState<ReactivationCandidate[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [orderJson, setOrderJson] = useState('');
@@ -490,6 +559,39 @@ export default function SimulatorPage() {
   }, []);
 
   useEffect(() => {
+    if (!token || (viewMode !== 'david' && viewMode !== 'luciana')) return;
+    let isActive = true;
+    const loadPersonalMonthlyKpis = async () => {
+      if (isActive) {
+        setIsLoadingMonthlyKpis(true);
+        setMonthlyKpisError('');
+      }
+      try {
+        const response = await fetch(`${apiUrl}/api/leads/my-monthly-kpis`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const result = await response.json() as PersonalMonthlyKpis | { message?: string };
+        if (!response.ok || !('monthlyTarget' in result)) {
+          throw new Error('message' in result ? result.message ?? 'No se pudieron cargar tus indicadores mensuales.' : 'No se pudieron cargar tus indicadores mensuales.');
+        }
+        if (isActive) setPersonalMonthlyKpis(result);
+      } catch (loadError) {
+        if (isActive) {
+          setMonthlyKpisError(loadError instanceof Error ? loadError.message : 'No se pudieron cargar tus indicadores mensuales.');
+        }
+      } finally {
+        if (isActive) setIsLoadingMonthlyKpis(false);
+      }
+    };
+    void loadPersonalMonthlyKpis();
+    const refreshTimer = window.setInterval(() => void loadPersonalMonthlyKpis(), 60_000);
+    return () => {
+      isActive = false;
+      window.clearInterval(refreshTimer);
+    };
+  }, [token, viewMode]);
+
+  useEffect(() => {
     if (!token) return;
     void loadManualFollowUps(token);
     const refreshTimer = window.setInterval(() => void loadManualFollowUps(token), 30_000);
@@ -516,16 +618,18 @@ export default function SimulatorPage() {
   async function loadSalesWorkspace(accessToken: string) {
     try {
       const headers = { Authorization: `Bearer ${accessToken}` };
-      const [equipmentResponse, budgetsResponse, followUpsResponse, leadsResponse] = await Promise.all([
+      const [equipmentResponse, budgetsResponse, followUpsResponse, leadsResponse, productsResponse] = await Promise.all([
         fetch(`${apiUrl}/api/maintenance/outbound`, { headers }),
         fetch(`${apiUrl}/api/budgets`, { headers }),
         fetch(`${apiUrl}/api/budgets/follow-ups`, { headers }),
-        fetch(`${apiUrl}/api/leads`, { headers })
+        fetch(`${apiUrl}/api/leads`, { headers }),
+        fetch(`${apiUrl}/api/products`, { headers })
       ]);
       const equipmentResult = (await equipmentResponse.json()) as MaintenanceEquipment[] | { message?: string };
       const budgetsResult = (await budgetsResponse.json()) as Budget[] | { message?: string };
       const followUpsResult = (await followUpsResponse.json()) as FollowUp[] | { message?: string };
       const leadsResult = (await leadsResponse.json()) as Lead[] | { message?: string };
+      const productsResult = (await productsResponse.json()) as CatalogProduct[] | { message?: string };
       if (!equipmentResponse.ok || !Array.isArray(equipmentResult)) {
         throw new Error(!Array.isArray(equipmentResult) ? equipmentResult.message ?? 'No se pudo cargar la cola de mantenimiento.' : 'No se pudo cargar la cola de mantenimiento.');
       }
@@ -539,10 +643,14 @@ export default function SimulatorPage() {
       if (!leadsResponse.ok || !Array.isArray(leadsResult)) {
         throw new Error(!Array.isArray(leadsResult) ? leadsResult.message ?? 'No se pudieron cargar los prospectos.' : 'No se pudieron cargar los prospectos.');
       }
+      if (!productsResponse.ok || !Array.isArray(productsResult)) {
+        throw new Error(!Array.isArray(productsResult) ? productsResult.message ?? 'No se pudo cargar el catálogo de productos.' : 'No se pudo cargar el catálogo de productos.');
+      }
       setMaintenanceEquipment(equipmentResult);
       setBudgets(budgetsResult);
       setFollowUps(followUpsResult);
       setLeads(leadsResult);
+      setProducts(productsResult);
       if (equipmentResult.length) {
         setSelectedCustomerId((current) => current || equipmentResult[0].customerId);
         setSelectedEquipmentId((current) => current || equipmentResult[0].id);
@@ -559,8 +667,15 @@ export default function SimulatorPage() {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const result = (await response.json()) as ManualFollowUp[] | { message?: string };
+      const candidatesResponse = await fetch(`${apiUrl}/api/follow-ups/reactivation-candidates`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const candidates = (await candidatesResponse.json()) as ReactivationCandidate[] | { message?: string };
       if (!response.ok || !Array.isArray(result)) {
         throw new Error(!Array.isArray(result) ? result.message ?? 'No se pudieron cargar los re-contactos.' : 'No se pudieron cargar los re-contactos.');
+      }
+      if (!candidatesResponse.ok || !Array.isArray(candidates)) {
+        throw new Error(!Array.isArray(candidates) ? candidates.message ?? 'No se pudieron cargar los clientes para reactivación.' : 'No se pudieron cargar los clientes para reactivación.');
       }
       if (!result.length) {
         const savedFollowUps = window.localStorage.getItem(MANUAL_FOLLOW_UPS_STORAGE_KEY);
@@ -585,6 +700,7 @@ export default function SimulatorPage() {
         }
       }
       setManualFollowUps(result);
+      setReactivationCandidates(candidates);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'No se pudieron cargar los re-contactos.');
     }
@@ -827,6 +943,27 @@ export default function SimulatorPage() {
     }
   }
 
+  async function scheduleReactivationCall(candidate: ReactivationCandidate) {
+    const dueAt = new Date();
+    dueAt.setDate(dueAt.getDate() + 1);
+    dueAt.setHours(9, 0, 0, 0);
+    const created = await addManualFollowUp({
+      customer: candidate.company,
+      email: candidate.email,
+      phone: candidate.phone ?? '',
+      reason: `Reactivación comercial · última compra ${new Date(candidate.lastPurchaseAt).toLocaleDateString('es-AR')}`,
+      dueAt: dueAt.toISOString(),
+      priority: 'Media',
+      owner: 'Luciana'
+    });
+    if (!created) return;
+    setFollowUpMonth(localMonthValue(dueAt));
+    setFollowUpStatusFilter('all');
+    setFollowUpNotice(`Llamada de reactivación agendada para ${candidate.company}.`);
+    setError('');
+    if (token) await loadManualFollowUps(token);
+  }
+
   async function createManualFollowUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!followUpCustomer.trim() || !followUpReason.trim() || !followUpDueAt) {
@@ -927,7 +1064,15 @@ export default function SimulatorPage() {
     if (extracted.company) setQuickLeadCompany(extracted.company);
     if (extracted.phone) setQuickLeadPhone(extracted.phone);
     if (extracted.email) setQuickLeadEmail(extracted.email);
-    if (extracted.product) setQuickLeadProduct(extracted.product);
+    if (extracted.product) {
+      const normalizedProduct = extracted.product.toLocaleLowerCase('es-AR');
+      const match = products.find((product) =>
+        product.name.toLocaleLowerCase('es-AR').includes(normalizedProduct) ||
+        product.sku.toLocaleLowerCase('es-AR') === normalizedProduct
+      );
+      setQuickLeadProductId(match?.id ?? '');
+      setQuickLeadProductDetail(match ? '' : extracted.product);
+    }
     if (extracted.amount) setQuickLeadAmount(extracted.amount);
   }
 
@@ -937,8 +1082,17 @@ export default function SimulatorPage() {
       setError('Inicia sesión para crear un prospecto en la base compartida.');
       return;
     }
-    if (!quickLeadName.trim() || !Number.isFinite(Number(quickLeadAmount || 0)) || Number(quickLeadAmount || 0) < 0) {
-      setError('Indica el nombre del contacto y un monto estimado válido.');
+    const equipmentQuantity = Number(quickLeadEquipmentQuantity);
+    if (
+      !quickLeadName.trim() ||
+      !Number.isFinite(Number(quickLeadAmount || 0)) ||
+      Number(quickLeadAmount || 0) < 0 ||
+      !Number.isInteger(equipmentQuantity) ||
+      equipmentQuantity < 0 ||
+      (quickLeadRequestType === 'new_equipment' && equipmentQuantity < 1) ||
+      (quickLeadRequestType === 'new_equipment' && !quickLeadProductId && !quickLeadProductDetail.trim())
+    ) {
+      setError('Completa el contacto, el tipo de requerimiento, el equipo y las cantidades con valores válidos.');
       return;
     }
     setIsSavingQuickLead(true);
@@ -953,7 +1107,15 @@ export default function SimulatorPage() {
           companyName: quickLeadCompany.trim(),
           phone: quickLeadPhone.trim(),
           email: quickLeadEmail.trim(),
-          productInterest: quickLeadProduct.trim(),
+          source: quickLeadSource,
+          sourceCampaign: quickLeadCampaign.trim(),
+          customerType: quickLeadCustomerType,
+          requestType: quickLeadRequestType,
+          productId: quickLeadRequestType === 'new_equipment' ? quickLeadProductId || undefined : undefined,
+          productInterest: quickLeadRequestType === 'new_equipment'
+            ? products.find((product) => product.id === quickLeadProductId)?.name ?? quickLeadProductDetail.trim()
+            : '',
+          equipmentQuantity: quickLeadRequestType === 'new_equipment' ? equipmentQuantity : 0,
           estimatedAmount: quickLeadAmount || '0',
           sourceMessage: quickLeadText.trim()
         })
@@ -969,11 +1131,18 @@ export default function SimulatorPage() {
       setQuickLeadCompany('');
       setQuickLeadPhone('');
       setQuickLeadEmail('');
-      setQuickLeadProduct('');
+      setQuickLeadProductId('');
+      setQuickLeadProductDetail('');
+      setQuickLeadSource('Web / Formulario');
+      setQuickLeadCampaign('');
+      setQuickLeadCustomerType('unknown');
+      setQuickLeadRequestType('new_equipment');
+      setQuickLeadEquipmentQuantity('1');
       setQuickLeadAmount('');
       setShowQuickLead(false);
-      setFollowUpNotice('Prospecto creado. Cadencia de hasta 7 re-contactos programada para David.');
-      setFollowUpMonth(localMonthValue(new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)));
+      const ownerName = viewMode === 'luciana' ? 'Luciana' : 'David';
+      setFollowUpNotice(`Prospecto creado. Cadencia de 7 re-contactos programada para ${ownerName}.`);
+      setFollowUpMonth(localMonthValue(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)));
     } catch (leadError) {
       setError(leadError instanceof Error ? leadError.message : 'No se pudo crear el prospecto.');
     } finally {
@@ -1381,7 +1550,7 @@ export default function SimulatorPage() {
           ? 'Aceptado. Venta cerrada y alerta del próximo service programada.'
           : budgetStatus === '04 - Perdido'
             ? 'Rechazo registrado con motivo.'
-            : 'Presupuesto enviado. Seguimiento programado a 3 días.'
+            : 'Presupuesto enviado. Primer seguimiento a 48 horas y luego a 7, 14, 21, 30, 45 y 60 días.'
       );
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'No se pudo guardar el check-in.');
@@ -1493,6 +1662,57 @@ export default function SimulatorPage() {
         </div>
       </header>
 
+      {(viewMode === 'david' || viewMode === 'luciana') && (
+        <section aria-label="Objetivo de ventas mensual" className="mx-auto w-full max-w-[1800px] border-b border-slate-200 bg-white px-4 py-2.5 sm:px-6">
+          {monthlyKpisError ? (
+            <p role="alert" className="text-sm text-red-700">{monthlyKpisError}</p>
+          ) : personalMonthlyKpis ? (
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+              <div className="min-w-[150px]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#1E64FF]">
+                  Objetivo de {viewMode === 'david' ? 'equipos' : 'servicios y repuestos'} · {new Date(personalMonthlyKpis.monthStart).toLocaleDateString('es-AR', { month: 'long', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' })}
+                </p>
+                <p className="mt-0.5 text-sm font-bold">
+                  {currency.format(personalMonthlyKpis.billedAmount)}
+                  <span className="font-medium text-slate-500"> de {currency.format(personalMonthlyKpis.monthlyTarget)}</span>
+                </p>
+              </div>
+              <div className="min-w-[180px] flex-1">
+                <div className="mb-1 flex justify-between text-xs font-semibold">
+                  <span>Avance del mes</span>
+                  <span>{personalMonthlyKpis.targetCompletionPercent}%</span>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-label="Avance del objetivo mensual"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.min(100, personalMonthlyKpis.targetCompletionPercent)}
+                  className="h-2 overflow-hidden rounded-full bg-slate-100"
+                >
+                  <div
+                    className="h-full rounded-full bg-[#1E64FF] transition-[width]"
+                    style={{ width: `${Math.min(100, Math.max(0, personalMonthlyKpis.targetCompletionPercent))}%` }}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">
+                {viewMode === 'david'
+                  ? `${personalMonthlyKpis.equipmentUnits} equipos · ${personalMonthlyKpis.quotesIssued} presupuestos · ${personalMonthlyKpis.quoteConversionPercent}% conversión`
+                  : `${personalMonthlyKpis.newCustomers} clientes nuevos · ${personalMonthlyKpis.reactivatedCustomers} reactivados`}
+              </p>
+              {!personalMonthlyKpis.billedAmount && (
+                <p className="w-full text-[11px] text-amber-700">
+                  Sin facturas importadas este mes; el avance se actualizará al cargar el CSV de Bejerman.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">{isLoadingMonthlyKpis ? 'Cargando objetivo y facturación del mes…' : 'No hay indicadores mensuales disponibles.'}</p>
+          )}
+        </section>
+      )}
+
       {showQuickLead && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4" role="presentation">
           <section role="dialog" aria-modal="true" aria-labelledby="quick-lead-title" className="my-auto w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:p-6">
@@ -1519,6 +1739,24 @@ export default function SimulatorPage() {
                 <button type="button" onClick={parseQuickLeadText} disabled={!quickLeadText.trim()} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-900 dark:text-blue-300 dark:hover:bg-blue-950/40">✨ Extraer datos del mensaje</button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm font-semibold">Canal de origen
+                  <select required value={quickLeadSource} onChange={(event) => setQuickLeadSource(event.target.value as (typeof leadSources)[number])} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950">
+                    {leadSources.map((source) => <option key={source} value={source}>{source}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm font-semibold">Campaña
+                  <input value={quickLeadCampaign} onChange={(event) => setQuickLeadCampaign(event.target.value)} maxLength={200} placeholder="Ej. Meta · 8 cheques · noviembre" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
+                </label>
+                <label className="text-sm font-semibold">Tipo de cliente
+                  <select required value={quickLeadCustomerType} onChange={(event) => setQuickLeadCustomerType(event.target.value as (typeof customerTypes)[number]['value'])} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950">
+                    {customerTypes.map((customerType) => <option key={customerType.value} value={customerType.value}>{customerType.label}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm font-semibold">Tipo de requerimiento
+                  <select required value={quickLeadRequestType} onChange={(event) => setQuickLeadRequestType(event.target.value as (typeof requestTypes)[number]['value'])} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950">
+                    {requestTypes.map((requestType) => <option key={requestType.value} value={requestType.value}>{requestType.label}</option>)}
+                  </select>
+                </label>
                 <label className="text-sm font-semibold">Nombre de contacto
                   <input required value={quickLeadName} onChange={(event) => setQuickLeadName(event.target.value)} placeholder="Nombre de la persona" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
                 </label>
@@ -1534,15 +1772,28 @@ export default function SimulatorPage() {
                 <label className="text-sm font-semibold">Email
                   <input type="email" value={quickLeadEmail} onChange={(event) => setQuickLeadEmail(event.target.value)} placeholder="contacto@empresa.com" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
                 </label>
-                <label className="text-sm font-semibold">Producto de interés
-                  <input value={quickLeadProduct} onChange={(event) => setQuickLeadProduct(event.target.value)} placeholder="Ej. PA 132" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
-                </label>
+                {quickLeadRequestType === 'new_equipment' && (
+                  <>
+                    <label className="text-sm font-semibold">Equipo del catálogo Pro-Aire
+                      <select required={!quickLeadProductDetail.trim()} value={quickLeadProductId} onChange={(event) => setQuickLeadProductId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950">
+                        <option value="">Selecciona un equipo…</option>
+                        {products.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-semibold">Detalle / equipo fuera de catálogo
+                      <input value={quickLeadProductDetail} onChange={(event) => setQuickLeadProductDetail(event.target.value)} maxLength={200} placeholder="Modelo, configuración o accesorio" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
+                    </label>
+                    <label className="text-sm font-semibold">Cantidad de equipos
+                      <input required type="number" min="1" step="1" value={quickLeadEquipmentQuantity} onChange={(event) => setQuickLeadEquipmentQuantity(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
+                    </label>
+                  </>
+                )}
                 <label className="text-sm font-semibold">Monto estimado de cotización ($)
                   <input type="number" min="0" step="0.01" value={quickLeadAmount} onChange={(event) => setQuickLeadAmount(event.target.value)} placeholder="0" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
                 </label>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
-                <p className="text-xs text-slate-500">Se creará el prospecto y una cadencia de hasta 7 re-contactos para David.</p>
+                <p className="text-xs text-slate-500">Se creará el prospecto con su canal, campaña y clasificación, más seguimientos a 2, 7, 14, 21, 30, 45 y 60 días.</p>
                 <button type="submit" disabled={isSavingQuickLead || !token} className="rounded-lg bg-[#1E64FF] px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">{isSavingQuickLead ? 'Creando…' : 'Crear prospecto y agendar'}</button>
               </div>
             </form>
@@ -1580,7 +1831,7 @@ export default function SimulatorPage() {
         </div>
       )}
 
-      <div className="mx-auto grid h-[calc(100dvh-61px)] max-w-[1800px] min-h-0 grid-cols-1 grid-rows-[auto_auto_minmax(0,1fr)] gap-2 p-2 sm:p-3 xl:grid-cols-[205px_290px_minmax(0,1fr)] xl:grid-rows-1 xl:gap-3">
+      <div className={`mx-auto grid ${viewMode === 'david' || viewMode === 'luciana' ? 'h-[calc(100dvh-180px)] sm:h-[calc(100dvh-145px)]' : 'h-[calc(100dvh-61px)]'} max-w-[1800px] min-h-0 grid-cols-1 grid-rows-[auto_auto_minmax(0,1fr)] gap-2 p-2 sm:p-3 xl:grid-cols-[205px_290px_minmax(0,1fr)] xl:grid-rows-1 xl:gap-3`}>
         <aside aria-label="Menú de módulos" className="flex min-h-0 items-center gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 xl:flex-col xl:items-stretch xl:overflow-visible xl:p-3">
           <div className="hidden border-b border-slate-100 px-2 pb-3 xl:block">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#1E64FF]">SalesPilotAI</p>
@@ -1695,6 +1946,19 @@ export default function SimulatorPage() {
                 <span className="mt-1 block text-xs text-slate-500">{reference.resolved ? 'Atendida' : 'Pendiente'} · {reference.sourceChannel}</span>
               </button>
             ))}
+            {activeModule === 'followups' && viewMode === 'luciana' && reactivationCandidates.map((candidate) => (
+              <article key={candidate.email} className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+                <p className="truncate text-sm font-bold">{candidate.company}</p>
+                <p className="mt-1 text-xs text-slate-500">Sin compras desde {mounted ? new Date(candidate.lastPurchaseAt).toLocaleDateString('es-AR') : ''} · {candidate.email}</p>
+                <button
+                  type="button"
+                  onClick={() => void scheduleReactivationCall(candidate)}
+                  className="mt-3 w-full rounded-lg border border-amber-300 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/50"
+                >
+                  Agendar llamada de reactivación
+                </button>
+              </article>
+            ))}
             {activeModule === 'followups' && manualFollowUps.map((item) => (
               <article key={item.id} className="rounded-xl border border-slate-100 p-3 dark:border-slate-800">
                 <div className="flex items-start gap-2">
@@ -1711,9 +1975,10 @@ export default function SimulatorPage() {
               (activeModule === 'budgets' && !budgets.length) ||
               (activeModule === 'customers' && !customers.length) ||
               (activeModule === 'copilot' && !visibleReferences.length) ||
-              (activeModule === 'followups' && !manualFollowUps.length)) && (
+              (activeModule === 'followups' && !manualFollowUps.length &&
+                !(viewMode === 'luciana' && reactivationCandidates.length))) && (
               <p className="px-3 py-8 text-center text-xs text-slate-500">
-                {activeModule === 'followups' ? 'Todavía no hay re-contactos agendados.' : token ? 'No hay elementos para mostrar.' : 'Inicia sesión para cargar tus datos.'}
+                {activeModule === 'followups' ? (viewMode === 'luciana' ? 'No hay llamadas ni re-contactos pendientes.' : 'Todavía no hay re-contactos agendados.') : token ? 'No hay elementos para mostrar.' : 'Inicia sesión para cargar tus datos.'}
               </p>
             )}
           </div>
@@ -2013,7 +2278,8 @@ export default function SimulatorPage() {
                       {leads.map((lead) => (
                         <article key={lead.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                           <p className="truncate text-sm font-bold">{lead.companyName ?? lead.customerName}</p>
-                          <p className="mt-1 text-xs text-slate-500">{lead.productInterest ?? 'Sin producto definido'} · {lead.status}</p>
+                          <p className="mt-1 text-xs text-slate-500">{lead.productInterest ?? 'Sin producto definido'} · {lead.equipmentQuantity || 'Sin'} equipos</p>
+                          <p className="mt-1 text-[10px] text-slate-500">{lead.source}{lead.sourceCampaign ? ` · ${lead.sourceCampaign}` : ''} · {customerTypes.find((type) => type.value === lead.customerType)?.label ?? 'Sin historial'}</p>
                           {lead.status !== '03 - Cotizado' && (
                             <button type="button" onClick={() => void changeLeadStage(lead)} className="mt-3 w-full rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50 dark:border-blue-900 dark:text-blue-300">
                               Pasar a 03 - Cotizado

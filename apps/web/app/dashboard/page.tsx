@@ -12,6 +12,34 @@ import {
 
 type DashboardData = {
   rangeDays: number;
+  monthlyCommercialKpis: {
+    monthStart: string;
+    people: Array<{
+      owner: 'David' | 'Luciana';
+      monthlyTarget: number;
+      billedAmount: number;
+      invoiceLineCount: number;
+      targetCompletionPercent: number;
+      equipmentUnits: number;
+      quotesIssued: number;
+      acceptedQuotes: number;
+      quoteConversionPercent: number;
+      newCustomers: number;
+      reactivatedCustomers: number;
+    }>;
+    total: {
+      monthlyTarget: number;
+      billedAmount: number;
+      invoiceLineCount: number;
+      targetCompletionPercent: number;
+      equipmentUnits: number;
+      quotesIssued: number;
+      acceptedQuotes: number;
+      quoteConversionPercent: number;
+      newCustomers: number;
+      reactivatedCustomers: number;
+    };
+  };
   budgetCount: number;
   issuedAmount: number;
   wonCount: number;
@@ -291,6 +319,67 @@ export default function DashboardPage() {
 
         {error && <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
         {!token && <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Inicia sesión como Javier (OWNER) para consultar el dashboard gerencial.</p>}
+
+        {data && (
+          <section aria-label="Indicadores comerciales mensuales" className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#1E64FF]">Mes actual · facturación importada</p>
+                <h2 className="mt-1 text-xl font-bold">Indicadores comerciales por responsable</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Facturación, equipos y servicios se calculan con facturas importadas. Los nuevos clientes de David cuentan presupuestos aceptados; los de Luciana, clientes nuevos facturados.
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                {new Date(data.monthlyCommercialKpis.monthStart).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}
+              </span>
+            </div>
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full min-w-[920px] border-separate border-spacing-0 text-left">
+                <thead>
+                  <tr className="text-xs font-bold text-slate-500">
+                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">Responsable</th>
+                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">Facturado / objetivo</th>
+                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">Equipos vendidos</th>
+                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">Presupuestos emitidos</th>
+                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">Conversión</th>
+                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">Nuevos clientes</th>
+                    <th className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">Reactivados</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { ...data.monthlyCommercialKpis.total, owner: 'Javier · total' },
+                    ...data.monthlyCommercialKpis.people
+                  ].map((metric) => (
+                    <tr key={metric.owner} className="text-sm">
+                      <th scope="row" className="border-b border-slate-100 px-3 py-4 font-bold dark:border-slate-800">{metric.owner}</th>
+                      <td className="border-b border-slate-100 px-3 py-4 dark:border-slate-800">
+                        <span className="font-semibold">{currency.format(metric.billedAmount)}</span>
+                        <span className="block text-xs text-slate-500">objetivo {currency.format(metric.monthlyTarget)} · {metric.targetCompletionPercent}%</span>
+                        <span className="block text-xs text-slate-500">{metric.invoiceLineCount} líneas facturadas</span>
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-4 dark:border-slate-800">{metric.equipmentUnits}</td>
+                      <td className="border-b border-slate-100 px-3 py-4 dark:border-slate-800">
+                        {metric.quotesIssued}
+                        <span className="block text-xs text-slate-500">{metric.acceptedQuotes} aceptados</span>
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-4 dark:border-slate-800">{metric.quoteConversionPercent}%</td>
+                      <td className="border-b border-slate-100 px-3 py-4 dark:border-slate-800">{metric.newCustomers}</td>
+                      <td className="border-b border-slate-100 px-3 py-4 dark:border-slate-800">{metric.reactivatedCustomers}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!data.monthlyCommercialKpis.total.invoiceLineCount && (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                Todavía no hay facturas importadas para este mes. Los montos facturados y el avance contra objetivo se actualizarán al importar el CSV de Bejerman.
+              </p>
+            )}
+            <p className="mt-3 text-xs text-slate-500">Luciana: facturación de servicios y repuestos. Javier: suma de ambos responsables. Las reactivaciones se informan aparte de clientes nuevos.</p>
+          </section>
+        )}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {tiles.map((tile) => (

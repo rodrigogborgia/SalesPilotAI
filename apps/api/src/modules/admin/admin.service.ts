@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import prisma from '../../lib/prisma';
+import { getMonthlyCommercialKpis } from '../analytics/commercialKpis.service';
 
 function dateFilter(days: number) {
   return days > 0 ? { gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) } : undefined;
@@ -61,6 +62,141 @@ export const adminService = {
       importedCount: newestByEmail.size,
       ...(await this.getCompletedSalesAudiences(organizationId))
     };
+  },
+
+  async importCommercialInvoices(
+    organizationId: string,
+    invoices: Array<{
+      invoiceNumber: string;
+      lineNumber: number;
+      invoiceDate: Date;
+      email: string | null;
+      company: string;
+      salesOwner: 'David' | 'Luciana';
+      businessUnit: 'equipment' | 'service' | 'spare_parts';
+      amount: number;
+      equipmentQuantity: number;
+      customerType?: 'new' | 'active' | 'reactivated' | 'unknown';
+    }>
+  ) {
+    const imported = await prisma.$transaction(async (tx) => {
+      const importedCount = { created: 0, updated: 0 };
+      for (const invoice of invoices) {
+        const key = {
+          organizationId_invoiceNumber_lineNumber: {
+            organizationId,
+            invoiceNumber: invoice.invoiceNumber,
+            lineNumber: invoice.lineNumber
+          }
+        };
+        const [existing, previousSale, matchingLead] = await Promise.all([
+          tx.salesInvoice.findUnique({ where: key }),
+          invoice.email
+            ? tx.completedSale.findUnique({
+                where: { organizationId_email: { organizationId, email: invoice.email } },
+                select: { purchaseDate: true }
+              })
+            : null,
+          invoice.email
+            ? tx.lead.findFirst({
+              where: { organizationId, email: invoice.email, createdAt: { lte: invoice.invoiceDate } },
+                orderBy: { createdAt: 'desc' },
+                select: { customerType: true }
+              })
+            : null
+        ]);
+        let customerType = invoice.customerType ?? existing?.customerType;
+        if (!customerType) {
+          const purchaseGap = previousSale
+            ? invoice.invoiceDate.getTime() - previousSale.purchaseDate.getTime()
+            : null;
+          customerType = purchaseGap !== null && purchaseGap >= 0
+            ? purchaseGap > 360 * 24 * 60 * 60 * 1000 ? 'reactivated' : 'active'
+            : !previousSale && (
+                matchingLead?.customerType === 'new' ||
+                matchingLead?.customerType === 'active' ||
+                matchingLead?.customerType === 'reactivated'
+              )
+              ? matchingLead.customerType
+              : 'unknown';
+        }
+
+        await tx.salesInvoice.upsert({
+          where: key,
+          update: {
+            invoiceDate: invoice.invoiceDate,
+            customerEmail: invoice.email,
+            customerName: invoice.company,
+            salesOwner: invoice.salesOwner,
+            businessUnit: invoice.businessUnit,
+            amount: new Prisma.Decimal(invoice.amount),
+            equipmentQuantity: invoice.equipmentQuantity,
+            customerType
+          },
+          create: {
+            organizationId,
+            invoiceNumber: invoice.invoiceNumber,
+            lineNumber: invoice.lineNumber,
+            invoiceDate: invoice.invoiceDate,
+            customerEmail: invoice.email,
+            customerName: invoice.company,
+            salesOwner: invoice.salesOwner,
+            businessUnit: invoice.businessUnit,
+            amount: new Prisma.Decimal(invoice.amount),
+            equipmentQuantity: invoice.equipmentQuantity,
+            customerType
+          }
+        });
+        if (existing) importedCount.updated += 1;
+        else importedCount.created += 1;
+      }
+
+      const emails = Array.from(new Set(invoices.flatMap((invoice) => invoice.email ? [invoice.email] : [])));
+      for (const email of emails) {
+        const latestInvoice = await tx.salesInvoice.findFirst({
+          where: { organizationId, customerEmail: email },
+          orderBy: [{ invoiceDate: 'desc' }, { invoiceNumber: 'desc' }],
+          select: {
+            invoiceDate: true,
+            invoiceNumber: true,
+            customerName: true,
+          }
+        });
+        if (!latestInvoice) continue;
+        const latestInvoiceTotal = await tx.salesInvoice.aggregate({
+          where: {
+            organizationId,
+            customerEmail: email,
+            invoiceNumber: latestInvoice.invoiceNumber,
+            invoiceDate: latestInvoice.invoiceDate
+          },
+          _sum: { amount: true }
+        });
+        const currentSale = await tx.completedSale.findUnique({
+          where: { organizationId_email: { organizationId, email } },
+          select: { purchaseDate: true }
+        });
+        if (currentSale && currentSale.purchaseDate > latestInvoice.invoiceDate) continue;
+        await tx.completedSale.upsert({
+          where: { organizationId_email: { organizationId, email } },
+          update: {
+            company: latestInvoice.customerName,
+            amount: latestInvoiceTotal._sum.amount ?? new Prisma.Decimal(0),
+            purchaseDate: latestInvoice.invoiceDate
+          },
+          create: {
+            organizationId,
+            email,
+            company: latestInvoice.customerName,
+            amount: latestInvoiceTotal._sum.amount ?? new Prisma.Decimal(0),
+            purchaseDate: latestInvoice.invoiceDate
+          }
+        });
+      }
+      return importedCount;
+    });
+
+    return { importedCount: invoices.length, ...imported };
   },
 
   async exportCompletedSalesAudiences(organizationId: string) {
@@ -158,8 +294,10 @@ export const adminService = {
     }
 
     const wonBudgets = budgets.filter((budget) => budget.status === '03 - Ganado');
+    const monthlyCommercialKpis = await getMonthlyCommercialKpis(organizationId);
     return {
       rangeDays: days,
+      monthlyCommercialKpis,
       budgetCount: budgets.length,
       issuedAmount: budgets.reduce((total, budget) => total + Number(budget.amount), 0),
       wonCount: wonBudgets.length,

@@ -4,9 +4,13 @@ import prisma from '../../lib/prisma';
 import { BudgetStatus } from '../../shared/budgetEnums';
 
 const cadence = [
-  { dayNumber: 3, message: 'Confirmación de lectura del presupuesto.' },
-  { dayNumber: 7, message: 'Consulta sobre financiación en cheques.' },
-  { dayNumber: 15, message: 'Cierre de cartera o pase a 05 - Stand-By.' }
+  { dayNumber: 2, message: 'Primer contacto de seguimiento · 48 horas.' },
+  { dayNumber: 7, message: 'Segundo seguimiento comercial.' },
+  { dayNumber: 14, message: 'Tercer seguimiento comercial.' },
+  { dayNumber: 21, message: 'Cuarto seguimiento comercial.' },
+  { dayNumber: 30, message: 'Quinto seguimiento comercial.' },
+  { dayNumber: 45, message: 'Sexto seguimiento comercial.' },
+  { dayNumber: 60, message: 'Cierre de cadencia comercial.' }
 ] as const;
 
 export type CreateVoiceMinuteInput = {
@@ -182,7 +186,7 @@ export const budgetsService = {
           where: { id: followUp.id, status: 'scheduled' },
           data: { status: 'sent', processedAt: new Date() }
         });
-        if (updated.count && followUp.dayNumber === 15) {
+        if (updated.count && followUp.dayNumber === 60) {
           await tx.budget.updateMany({
             where: {
               id: followUp.budgetId,
@@ -295,7 +299,7 @@ export const budgetsService = {
 
       if (user.firstName === 'Luciana' && input.status === BudgetStatus.SENT && previousStatus !== BudgetStatus.SENT) {
         const dueAt = new Date();
-        dueAt.setDate(dueAt.getDate() + 3);
+        dueAt.setDate(dueAt.getDate() + 2);
         await tx.manualFollowUp.create({
           data: {
             organizationId,

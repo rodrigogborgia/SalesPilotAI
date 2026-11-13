@@ -35,6 +35,22 @@ La consola `/admin` permite importar un CSV de ventas concretadas con las column
 
 La semilla Lookalike usa todos los compradores importados. Las compras de los últimos 90 días se identifican además como exclusión de captación y como audiencia Top of Mind / mantenimiento. La sincronización con Meta y el CSV combinado de segmentos son preparaciones locales simuladas; no se envían datos a Meta Ads.
 
+## Seguimiento comercial Pro-Aire
+
+El alta de prospectos registra canal, campaña, tipo de cliente, requerimiento, producto del catálogo activo, cantidad y monto estimado. Los productos se consultan desde la base de datos; `db:setup` carga el catálogo incluido en el seed. La asignación sigue al usuario que registra el contacto (David o Luciana), sin derivación automática por tipo de requerimiento.
+
+La cadencia automática se programa desde el ingreso del prospecto a los 2, 7, 14, 21, 30, 45 y 60 días. Los clientes con última compra registrada hace más de 360 días aparecen en la cola de reactivación de Luciana; sin historial de compras no se los clasifica como inactivos.
+
+## Importación de facturas y métricas mensuales
+
+Desde `/admin`, el rol OWNER/ADMIN puede importar periódicamente un CSV de facturas de Bejerman. Es una importación manual, no una integración directa. Cada fila representa un rubro de una factura; si el comprobante tiene varias líneas, indica un número de línea distinto para cada una. Se aceptan separadores coma o punto y coma y fechas `DD/MM/AAAA` o ISO.
+
+Columnas requeridas: `Número de Factura`, `Fecha`, `Empresa`, `Responsable` (`David`/`Luciana`), `Rubro` (`Equipo`, `Servicio` o `Repuestos`) y `Monto`. `Línea` (por defecto 1), `Email`, `Cantidad de equipos` y `Tipo de cliente` (`nuevo`, `activo`, `reactivado`, `desconocido`) son opcionales. La empresa y el email se usan para consolidar compras; el tipo se infiere del prospecto o del historial importado cuando no viene en el archivo.
+
+El dashboard suma facturas importadas del mes calendario en Argentina: equipos para David, servicios y repuestos para Luciana; la conversión se calcula sobre presupuestos que pasaron a cotizados y sus cierres. Los nuevos clientes de David son empresas con primer presupuesto aceptado; para Luciana se cuentan clientes nuevos facturados y las reactivaciones se muestran aparte. Los objetivos iniciales son $80.000.000 mensuales para David y $50.000.000 para Luciana; Javier ve la suma y el desglose por responsable. Importa el historial disponible antes de usar la cola de reactivación o interpretar clientes sin compras previas.
+
+David y Luciana también ven en su consola personal el objetivo mensual, la facturación acumulada y el avance contra objetivo. La cifra se actualiza al cargar la pantalla y cada minuto; requiere haber importado las facturas del mes desde `/admin`.
+
 ## Estructura
 
 ```text
