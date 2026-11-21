@@ -1,8 +1,11 @@
 export type ManualFollowUpStatus = 'scheduled' | 'completed' | 'won' | 'lost' | 'cancelled';
+export type ManualFollowUpOutcome = 'contacted' | 'no_answer' | 'not_interested' | 'follow_up' | 'other';
 
 export type ManualFollowUp = {
   id: string;
   customer: string;
+  customerId?: string | null;
+  contactId?: string | null;
   contactName?: string | null;
   contactTitle?: string | null;
   email?: string | null;
@@ -13,6 +16,12 @@ export type ManualFollowUp = {
   owner: 'David' | 'Luciana';
   status: ManualFollowUpStatus;
   result: string;
+  outcome?: ManualFollowUpOutcome | null;
+  nextAction?: string | null;
+  originalDueAt?: string | null;
+  cadenceId?: string | null;
+  cadenceStep?: number | null;
+  cadenceOffsetDays?: number | null;
   createdAt: string;
   completedAt: string | null;
   refCode?: string | null;
@@ -43,6 +52,10 @@ function isManualFollowUp(value: unknown): value is ManualFollowUp {
     (item.owner === 'David' || item.owner === 'Luciana') &&
     (item.status === 'scheduled' || item.status === 'completed' || item.status === 'won' || item.status === 'lost' || item.status === 'cancelled') &&
     typeof item.result === 'string' &&
+    (item.outcome === undefined || item.outcome === null ||
+      item.outcome === 'contacted' || item.outcome === 'no_answer' || item.outcome === 'not_interested' ||
+      item.outcome === 'follow_up' || item.outcome === 'other') &&
+    (item.nextAction === undefined || item.nextAction === null || typeof item.nextAction === 'string') &&
     typeof item.createdAt === 'string' &&
     Number.isFinite(Date.parse(item.createdAt)) &&
     (item.completedAt === null || (typeof item.completedAt === 'string' && Number.isFinite(Date.parse(item.completedAt)))) &&

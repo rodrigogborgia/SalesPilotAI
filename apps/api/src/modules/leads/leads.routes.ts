@@ -1,20 +1,13 @@
 import { Router } from 'express';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 
 import prisma from '../../lib/prisma';
 import { getMonthlyCommercialKpis } from '../analytics/commercialKpis.service';
+import { resolveLeadCustomerIdentity } from '../customers/customers.service';
+import { salesCadence } from '../follow-ups/cadence';
 
 export const leadsRoutes = Router();
-
-const salesCadence = [
-  { day: 2, message: 'Primer contacto de seguimiento · 48 horas.' },
-  { day: 7, message: 'Segundo seguimiento comercial.' },
-  { day: 14, message: 'Tercer seguimiento comercial.' },
-  { day: 21, message: 'Cuarto seguimiento comercial.' },
-  { day: 30, message: 'Quinto seguimiento comercial.' },
-  { day: 45, message: 'Sexto seguimiento comercial.' },
-  { day: 60, message: 'Séptimo seguimiento comercial.' }
-] as const;
 
 const leadSources = [
   'WhatsApp Meta - 8 Cheques',
@@ -29,6 +22,8 @@ const leadSources = [
 ] as const;
 const customerTypes = ['new', 'active', 'reactivated', 'unknown'] as const;
 const requestTypes = ['new_equipment', 'service_maintenance', 'spare_parts', 'engineering', 'other'] as const;
+const entityTypes = ['person', 'company'] as const;
+const contactRelationships = ['owner', 'employee', 'other'] as const;
 
 function nonEmptyString(value: unknown, maxLength: number): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= maxLength;
@@ -70,6 +65,8 @@ leadsRoutes.get('/', async (req, res, next) => {
       include: {
         opportunities: true,
         product: { select: { id: true, sku: true, name: true } },
+        customer: { include: { contacts: { orderBy: [{ isPrimary: 'desc' }, { fullName: 'asc' }] } } },
+        contact: true,
         assignedToUser: { select: { id: true, firstName: true } }
       },
       orderBy: { createdAt: 'desc' }
@@ -94,12 +91,19 @@ leadsRoutes.post('/', async (req, res, next) => {
     sourceCampaign?: unknown;
     customerType?: unknown;
     requestType?: unknown;
+    entityType?: unknown;
+    contactRelationship?: unknown;
+    documentNumber?: unknown;
     productId?: unknown;
     equipmentQuantity?: unknown;
   };
   const amount = body.estimatedAmount;
   const numericAmount = typeof amount === 'number' || typeof amount === 'string' ? Number(amount) : 0;
   const equipmentQuantity = body.equipmentQuantity === undefined ? 1 : Number(body.equipmentQuantity);
+  const entityType = body.entityType === undefined
+    ? typeof body.companyName === 'string' && body.companyName.trim() ? 'company' : 'person'
+    : body.entityType;
+  const contactRelationship = body.contactRelationship === undefined ? 'other' : body.contactRelationship;
 
   if (
     !nonEmptyString(body.customerName, 200) ||
@@ -114,6 +118,10 @@ leadsRoutes.post('/', async (req, res, next) => {
     !validOptionalString(body.sourceCampaign, 200) ||
     (body.customerType !== undefined && !customerTypes.includes(body.customerType as typeof customerTypes[number])) ||
     (body.requestType !== undefined && !requestTypes.includes(body.requestType as typeof requestTypes[number])) ||
+    !entityTypes.includes(entityType as typeof entityTypes[number]) ||
+    (entityType === 'company' && !nonEmptyString(body.companyName, 200)) ||
+    !contactRelationships.includes(contactRelationship as typeof contactRelationships[number]) ||
+    !validOptionalString(body.documentNumber, 80) ||
     (body.productId !== undefined && body.productId !== null &&
       (typeof body.productId !== 'string' || body.productId.length > 80)) ||
     !Number.isInteger(equipmentQuantity) || equipmentQuantity < 0 || equipmentQuantity > 10000 ||
@@ -125,6 +133,17 @@ leadsRoutes.post('/', async (req, res, next) => {
     return;
   }
   const customerName = body.customerName.trim();
+  const companyName = typeof body.companyName === 'string' ? body.companyName.trim() : '';
+  const documentNumber = typeof body.documentNumber === 'string'
+    ? body.documentNumber.trim().replace(/\s/g, '')
+    : '';
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+  const resolvedEntityType = entityType === 'company' ? 'company' : 'person';
+  const resolvedContactRelationship =
+    contactRelationship === 'owner' || contactRelationship === 'employee' || contactRelationship === 'other'
+      ? contactRelationship
+      : 'other';
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -161,7 +180,6 @@ leadsRoutes.post('/', async (req, res, next) => {
         });
         if (!product) return { productUnavailable: true as const };
       }
-      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
       let customerType = typeof body.customerType === 'string' ? body.customerType : 'unknown';
       if (customerType === 'unknown' && email) {
         const lastSale = await tx.completedSale.findUnique({
@@ -178,20 +196,36 @@ leadsRoutes.post('/', async (req, res, next) => {
         (typeof body.productInterest === 'string' ? body.productInterest.trim() : '');
       const ownerId = assignedUser?.id ?? req.auth!.userId;
       const ownerName = assignedUser?.firstName ?? defaultOwnerName;
+      const identity = await resolveLeadCustomerIdentity(tx, req.auth!.organizationId, {
+        entityType: resolvedEntityType,
+        fullName: customerName,
+        ...(companyName ? { companyName } : {}),
+        ...(documentNumber ? { documentNumber } : {}),
+        ...(email ? { email } : {}),
+        ...(phone ? { phone } : {}),
+        ...(typeof body.contactTitle === 'string' ? { title: body.contactTitle.trim() } : {}),
+        relationship: resolvedContactRelationship
+      });
+      if (identity.ambiguous) return { ambiguousIdentity: true as const };
+
       const lead = await tx.lead.create({
         data: {
           organizationId: req.auth!.organizationId,
           assignedToUserId: ownerId,
           source: typeof body.source === 'string' ? body.source : 'manual_quick_add',
           sourceCampaign: typeof body.sourceCampaign === 'string' ? body.sourceCampaign.trim() || null : null,
+          entityType: resolvedEntityType,
+          contactRelationship: resolvedContactRelationship,
           customerName,
           contactTitle: typeof body.contactTitle === 'string' ? body.contactTitle.trim() || null : null,
-          companyName: typeof body.companyName === 'string' ? body.companyName.trim() || null : null,
-          contactPhone: typeof body.phone === 'string' ? body.phone.trim() || null : null,
+          companyName: companyName || null,
+          contactPhone: phone || null,
           email: email || null,
           customerType,
           requestType: typeof body.requestType === 'string' ? body.requestType : 'new_equipment',
           productId: product?.id ?? null,
+          customerId: identity.customer.id,
+          contactId: identity.contact?.id ?? null,
           equipmentQuantity,
           productInterest: productName || null,
           estimatedAmount: new Prisma.Decimal(numericAmount),
@@ -211,39 +245,51 @@ leadsRoutes.post('/', async (req, res, next) => {
           notes: productName ? `Producto de interés: ${productName}` : null
         }
       });
-      const dueAt = new Date();
-      dueAt.setDate(dueAt.getDate() + salesCadence[0].day);
+      const cadenceId = randomUUID();
+      const cadenceStart = new Date();
+      const dueAt = new Date(cadenceStart.getTime() + salesCadence[0].day * 24 * 60 * 60 * 1000);
       const followUp = await tx.manualFollowUp.create({
         data: {
           organizationId: req.auth!.organizationId,
           leadId: lead.id,
+          customerId: identity.customer.id,
+          contactId: identity.contact?.id ?? null,
           assignedToUserId: ownerId,
-          customer: lead.companyName ?? lead.customerName,
+          customer: companyName || lead.customerName,
           contactName: lead.customerName,
           contactTitle: lead.contactTitle,
           email: lead.email,
           phone: lead.contactPhone ?? '',
           reason: `${salesCadence[0].message} · ${productName || 'nuevo prospecto'}`,
           dueAt,
+          originalDueAt: dueAt,
+          cadenceId,
+          cadenceStep: 1,
+          cadenceOffsetDays: salesCadence[0].day,
           priority: 'Media',
           owner: ownerName
         }
       });
       await tx.manualFollowUp.createMany({
-        data: salesCadence.slice(1).map(({ day, message }) => {
-          const scheduledAt = new Date();
-          scheduledAt.setDate(scheduledAt.getDate() + day);
+        data: salesCadence.slice(1).map(({ day, message }, index) => {
+          const scheduledAt = new Date(cadenceStart.getTime() + day * 24 * 60 * 60 * 1000);
           return {
             organizationId: req.auth!.organizationId,
             leadId: lead.id,
+            customerId: identity.customer.id,
+            contactId: identity.contact?.id ?? null,
             assignedToUserId: ownerId,
-            customer: lead.companyName ?? lead.customerName,
+            customer: companyName || lead.customerName,
             contactName: lead.customerName,
             contactTitle: lead.contactTitle,
             email: lead.email,
             phone: lead.contactPhone ?? '',
             reason: `${message} · ${productName || 'nuevo prospecto'}`,
             dueAt: scheduledAt,
+            originalDueAt: scheduledAt,
+            cadenceId,
+            cadenceStep: index + 2,
+            cadenceOffsetDays: day,
             priority: 'Media',
             owner: ownerName
           };
@@ -253,6 +299,12 @@ leadsRoutes.post('/', async (req, res, next) => {
     });
     if ('productUnavailable' in result) {
       res.status(404).json({ message: 'El producto seleccionado ya no está disponible en el catálogo.' });
+      return;
+    }
+    if ('ambiguousIdentity' in result) {
+      res.status(409).json({
+        message: 'Hay más de un cliente con esa identidad. Agrega CUIT/DNI o corrige el contacto antes de crear el prospecto.'
+      });
       return;
     }
     res.status(201).json(result);
@@ -307,10 +359,12 @@ leadsRoutes.patch('/:leadId/stage', async (req, res, next) => {
           data: { quotedAt: opportunity.quotedAt ?? new Date(), productId: lead.productId }
         });
       }
-      const existingCadence = await tx.manualFollowUp.count({
-        where: { organizationId: req.auth!.organizationId, leadId: lead.id }
+      const existingFollowUps = await tx.manualFollowUp.findMany({
+        where: { organizationId: req.auth!.organizationId, leadId: lead.id },
+        select: { cadenceId: true },
+        orderBy: { createdAt: 'asc' }
       });
-      if (existingCadence < salesCadence.length) {
+      if (existingFollowUps.length < salesCadence.length) {
         const assignedUser = await tx.user.findFirst({
           where: {
             organizationId: req.auth!.organizationId,
@@ -321,18 +375,25 @@ leadsRoutes.patch('/:leadId/stage', async (req, res, next) => {
           orderBy: { createdAt: 'asc' }
         });
         const assignedToUserId = assignedUser?.id ?? lead.assignedToUserId ?? req.auth!.userId;
+        const cadenceId = existingFollowUps.find((followUp) => followUp.cadenceId)?.cadenceId ?? randomUUID();
         await tx.manualFollowUp.createMany({
-          data: salesCadence.slice(existingCadence).map(({ day, message }) => {
-            const scheduledAt = new Date(lead.createdAt);
-            scheduledAt.setDate(scheduledAt.getDate() + day);
+          data: salesCadence.slice(existingFollowUps.length).map(({ day, message }, index) => {
+            const step = existingFollowUps.length + index + 1;
+            const scheduledAt = new Date(lead.createdAt.getTime() + day * 24 * 60 * 60 * 1000);
             return {
               organizationId: req.auth!.organizationId,
               leadId: lead.id,
+              customerId: lead.customerId,
+              contactId: lead.contactId,
               assignedToUserId,
               customer: lead.companyName ?? lead.customerName,
               phone: lead.contactPhone ?? '',
               reason: `${message} · ${lead.productInterest ?? 'oportunidad cotizada'}`,
               dueAt: scheduledAt,
+              originalDueAt: scheduledAt,
+              cadenceId,
+              cadenceStep: step,
+              cadenceOffsetDays: day,
               priority: 'Media',
               owner: assignedUser?.firstName === 'Luciana' ? 'Luciana' : 'David'
             };

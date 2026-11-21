@@ -73,6 +73,7 @@ model User {
   authoredVoiceMinutes      VoiceMinute[]
   capturedMetaAudiences      MetaAudienceEntry[]
   authoredLearningRules      CommercialLearningRule[]
+  changedFollowUpSchedules  ManualFollowUpScheduleChange[]
 
   @@index([organizationId, role])
 }
@@ -130,12 +131,14 @@ model Customer {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   fullName       String
+  entityType     String   @default("person")
   contactTitle   String?
   email          String?
   corporateEmail String?
   phone          String?
   companyName    String?
   documentNumber String?
+  bejermanId     String?
   segment        String?
   address        String?
   notes          String?
@@ -154,8 +157,34 @@ model Customer {
   budgets            Budget[]
   voiceMinutes       VoiceMinute[]
   metaAudienceEntries MetaAudienceEntry[]
+  contacts           CustomerContact[]
+  leads              Lead[]
+  manualFollowUps    ManualFollowUp[]
 
   @@index([organizationId, status])
+  @@index([organizationId, entityType, documentNumber])
+}
+
+model CustomerContact {
+  id             String   @id @default(uuid())
+  organizationId String
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  fullName      String
+  title         String?
+  relationship  String   @default("other")
+  email         String?
+  phone         String?
+  isPrimary     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  leads          Lead[]
+  manualFollowUps ManualFollowUp[]
+
+  @@index([organizationId, customerId])
+  @@index([organizationId, email])
 }
 
 model InstalledEquipment {
@@ -249,6 +278,8 @@ model Lead {
 
   source         String
   sourceCampaign String?
+  entityType     String   @default("company")
+  contactRelationship String @default("other")
   customerName   String
   contactTitle  String?
   contactPhone   String?
@@ -258,6 +289,10 @@ model Lead {
   requestType    String   @default("new_equipment")
   productId      String?
   product        Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  contactId      String?
+  contact        CustomerContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
   equipmentQuantity Int @default(1)
   status         String   @default("new")
   score          Int      @default(0)
@@ -272,6 +307,7 @@ model Lead {
 
   @@index([organizationId, status])
   @@index([organizationId, customerType])
+  @@index([organizationId, customerId])
 }
 
 model ManualFollowUp {
@@ -284,23 +320,52 @@ model ManualFollowUp {
   assignedToUser User?        @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
 
   customer   String
+  customerId String?
+  customerAccount Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  contactId  String?
+  contact    CustomerContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
   contactName String?
   contactTitle String?
   email      String?
   phone      String   @default("")
   reason     String
   dueAt      DateTime
+  originalDueAt DateTime?
   priority   String   @default("Media")
   owner      String
   status     String   @default("scheduled")
   result     String   @default("")
+  outcome    String?
+  nextAction String?
+  cadenceId  String?
+  cadenceStep Int?
+  cadenceOffsetDays Int?
   completedAt DateTime?
   refCode    String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  scheduleChanges ManualFollowUpScheduleChange[]
 
   @@index([organizationId, status, dueAt])
   @@index([organizationId, owner, dueAt])
+  @@index([organizationId, cadenceId, cadenceStep])
+}
+
+model ManualFollowUpScheduleChange {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  followUpId          String
+  followUp            ManualFollowUp @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+  changedByUserId     String?
+  changedByUser       User?    @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+  changeGroupId       String
+  previousDueAt       DateTime
+  newDueAt            DateTime
+  changeReason        String
+  createdAt           DateTime @default(now())
+
+  @@index([organizationId, followUpId, createdAt])
+  @@index([changeGroupId])
 }
 
 model Opportunity {

@@ -10,6 +10,7 @@ import {
   MANUAL_FOLLOW_UPS_STORAGE_KEY,
   parseManualFollowUps,
   type ManualFollowUp,
+  type ManualFollowUpOutcome,
   type ManualFollowUpStatus
 } from '../../lib/manualFollowUps';
 import { ENABLE_SOFIA_CHAT, getViewMode, type ViewMode } from '../../lib/alphaViewMode';
@@ -124,6 +125,10 @@ type SpeechWindow = Window & {
 
 type Lead = {
   id: string;
+  entityType: 'person' | 'company';
+  contactRelationship: 'owner' | 'employee' | 'other';
+  customerId: string | null;
+  contactId: string | null;
   customerName: string;
   contactTitle: string | null;
   companyName: string | null;
@@ -424,8 +429,11 @@ export default function SimulatorPage() {
   const [followUpStatusFilter, setFollowUpStatusFilter] = useState<'all' | 'overdue' | 'today' | 'upcoming' | 'done'>('today');
   const [showFollowUpForm, setShowFollowUpForm] = useState(false);
   const [followUpCustomer, setFollowUpCustomer] = useState('');
+  const [followUpEntityType, setFollowUpEntityType] = useState<'person' | 'company'>('company');
   const [followUpContactName, setFollowUpContactName] = useState('');
   const [followUpContactTitle, setFollowUpContactTitle] = useState('');
+  const [followUpContactRelationship, setFollowUpContactRelationship] = useState<'owner' | 'employee' | 'other'>('other');
+  const [followUpDocumentNumber, setFollowUpDocumentNumber] = useState('');
   const [followUpEmail, setFollowUpEmail] = useState('');
   const [followUpPhone, setFollowUpPhone] = useState('');
   const [followUpReason, setFollowUpReason] = useState('');
@@ -434,16 +442,26 @@ export default function SimulatorPage() {
   const [followUpOwner, setFollowUpOwner] = useState<ManualFollowUp['owner']>('David');
   const [recordingFollowUpId, setRecordingFollowUpId] = useState('');
   const [editingFollowUpId, setEditingFollowUpId] = useState('');
+  const [editingFollowUpDueAt, setEditingFollowUpDueAt] = useState('');
+  const [rescheduleScope, setRescheduleScope] = useState<'cadence' | 'single'>('cadence');
   const [closureFollowUp, setClosureFollowUp] = useState<{ item: ManualFollowUp; status: 'won' | 'lost' } | null>(null);
   const [closureReason, setClosureReason] = useState('');
   const [closureNote, setClosureNote] = useState('');
   const [isSavingClosure, setIsSavingClosure] = useState(false);
+  const [completionFollowUp, setCompletionFollowUp] = useState<ManualFollowUp | null>(null);
+  const [completionResult, setCompletionResult] = useState('');
+  const [completionOutcome, setCompletionOutcome] = useState<ManualFollowUpOutcome | ''>('');
+  const [completionNextAction, setCompletionNextAction] = useState('');
+  const [isSavingCompletion, setIsSavingCompletion] = useState(false);
   const [followUpNotice, setFollowUpNotice] = useState('');
   const [showQuickLead, setShowQuickLead] = useState(false);
   const [quickLeadText, setQuickLeadText] = useState('');
   const [quickLeadName, setQuickLeadName] = useState('');
+  const [quickLeadEntityType, setQuickLeadEntityType] = useState<'person' | 'company'>('company');
+  const [quickLeadContactRelationship, setQuickLeadContactRelationship] = useState<'owner' | 'employee' | 'other'>('other');
   const [quickLeadContactTitle, setQuickLeadContactTitle] = useState('');
   const [quickLeadCompany, setQuickLeadCompany] = useState('');
+  const [quickLeadDocumentNumber, setQuickLeadDocumentNumber] = useState('');
   const [quickLeadPhone, setQuickLeadPhone] = useState('');
   const [quickLeadEmail, setQuickLeadEmail] = useState('');
   const [quickLeadProductId, setQuickLeadProductId] = useState('');
@@ -920,7 +938,11 @@ export default function SimulatorPage() {
     void resolveReference(reference.refCode);
   }
 
-  async function addManualFollowUp(input: Omit<ManualFollowUp, 'id' | 'createdAt' | 'completedAt' | 'status' | 'result'>) {
+  async function addManualFollowUp(input: Omit<ManualFollowUp, 'id' | 'createdAt' | 'completedAt' | 'status' | 'result'> & {
+    entityType?: 'person' | 'company';
+    documentNumber?: string;
+    contactRelationship?: 'owner' | 'employee' | 'other';
+  }) {
     if (!token) {
       setError('Inicia sesión para guardar un re-contacto en la base compartida.');
       return null;
@@ -970,9 +992,16 @@ export default function SimulatorPage() {
       setError('Completa el cliente, el motivo y la fecha/hora del seguimiento.');
       return;
     }
+    if (followUpEntityType === 'company' && !followUpContactName.trim()) {
+      setError('Para una empresa, indica también la persona de contacto.');
+      return;
+    }
     const created = await addManualFollowUp({
       customer: followUpCustomer.trim(),
-      contactName: followUpContactName.trim(),
+      entityType: followUpEntityType,
+      documentNumber: followUpDocumentNumber.trim(),
+      contactRelationship: followUpContactRelationship,
+      contactName: followUpEntityType === 'company' ? followUpContactName.trim() : '',
       contactTitle: followUpContactTitle.trim(),
       email: followUpEmail.trim(),
       phone: followUpPhone.trim(),
@@ -983,8 +1012,10 @@ export default function SimulatorPage() {
     });
     if (!created) return;
     setFollowUpCustomer('');
+    setFollowUpDocumentNumber('');
     setFollowUpContactName('');
     setFollowUpContactTitle('');
+    setFollowUpContactRelationship('other');
     setFollowUpEmail('');
     setFollowUpPhone('');
     setFollowUpReason('');
@@ -1032,7 +1063,11 @@ export default function SimulatorPage() {
 
   async function updateManualFollowUp(
     id: string,
-    update: Partial<ManualFollowUp> & { motivoPerdida?: string; motivoPerdidaNota?: string }
+    update: Partial<ManualFollowUp> & {
+      motivoPerdida?: string;
+      motivoPerdidaNota?: string;
+      rescheduleScope?: 'cadence' | 'single';
+    }
   ): Promise<boolean> {
     if (!token) {
       setError('Inicia sesión para actualizar el re-contacto.');
@@ -1050,6 +1085,9 @@ export default function SimulatorPage() {
         throw new Error('message' in result ? result.message ?? 'No se pudo actualizar el seguimiento.' : 'No se pudo actualizar el seguimiento.');
       }
       setManualFollowUps((current) => current.map((item) => item.id === id ? result : item));
+      if (update.dueAt || update.status === 'completed' || update.status === 'won' || update.status === 'lost') {
+        await loadManualFollowUps(token);
+      }
       return true;
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'No se pudo actualizar el seguimiento.');
@@ -1085,6 +1123,7 @@ export default function SimulatorPage() {
     const equipmentQuantity = Number(quickLeadEquipmentQuantity);
     if (
       !quickLeadName.trim() ||
+      (quickLeadEntityType === 'company' && !quickLeadCompany.trim()) ||
       !Number.isFinite(Number(quickLeadAmount || 0)) ||
       Number(quickLeadAmount || 0) < 0 ||
       !Number.isInteger(equipmentQuantity) ||
@@ -1104,7 +1143,10 @@ export default function SimulatorPage() {
         body: JSON.stringify({
           customerName: quickLeadName.trim(),
           contactTitle: quickLeadContactTitle.trim(),
-          companyName: quickLeadCompany.trim(),
+          entityType: quickLeadEntityType,
+          contactRelationship: quickLeadEntityType === 'company' ? quickLeadContactRelationship : 'other',
+          companyName: quickLeadEntityType === 'company' ? quickLeadCompany.trim() : '',
+          documentNumber: quickLeadDocumentNumber.trim(),
           phone: quickLeadPhone.trim(),
           email: quickLeadEmail.trim(),
           source: quickLeadSource,
@@ -1127,8 +1169,11 @@ export default function SimulatorPage() {
       await Promise.all([loadManualFollowUps(token), loadSalesWorkspace(token)]);
       setQuickLeadText('');
       setQuickLeadName('');
+      setQuickLeadEntityType('company');
+      setQuickLeadContactRelationship('other');
       setQuickLeadContactTitle('');
       setQuickLeadCompany('');
+      setQuickLeadDocumentNumber('');
       setQuickLeadPhone('');
       setQuickLeadEmail('');
       setQuickLeadProductId('');
@@ -1153,17 +1198,33 @@ export default function SimulatorPage() {
   function rescheduleManualFollowUp(item: ManualFollowUp, days: number) {
     const nextDate = new Date(Math.max(Date.now(), new Date(item.dueAt).getTime()));
     nextDate.setDate(nextDate.getDate() + days);
-    void updateManualFollowUp(item.id, { dueAt: nextDate.toISOString(), status: 'scheduled' });
+    void updateManualFollowUp(item.id, {
+      dueAt: nextDate.toISOString(),
+      status: 'scheduled',
+      rescheduleScope: rescheduleScope
+    });
   }
 
   function markNotLocated(item: ManualFollowUp) {
     const dueAt = new Date();
     dueAt.setDate(dueAt.getDate() + 3);
     const result = [item.result, 'No ubicado; re-llamar en 3 días.'].filter(Boolean).join('\n');
-    void updateManualFollowUp(item.id, { dueAt: dueAt.toISOString(), status: 'scheduled', result });
+    void updateManualFollowUp(item.id, {
+      dueAt: dueAt.toISOString(),
+      status: 'scheduled',
+      result,
+      rescheduleScope: 'cadence'
+    });
   }
 
   function setManualFollowUpStatus(item: ManualFollowUp, status: ManualFollowUpStatus) {
+    if (status === 'completed') {
+      setCompletionFollowUp(item);
+      setCompletionResult(item.result);
+      setCompletionOutcome(item.outcome ?? '');
+      setCompletionNextAction(item.nextAction ?? '');
+      return;
+    }
     if (status === 'won' || status === 'lost') {
       setClosureFollowUp({ item, status });
       setClosureReason('');
@@ -1173,6 +1234,28 @@ export default function SimulatorPage() {
     void updateManualFollowUp(item.id, {
       status,
     });
+  }
+
+  async function completeManualFollowUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!completionFollowUp || !completionOutcome || !completionResult.trim()) {
+      setError('Registra el resultado y selecciona cómo terminó el contacto.');
+      return;
+    }
+    setIsSavingCompletion(true);
+    const saved = await updateManualFollowUp(completionFollowUp.id, {
+      status: 'completed',
+      result: completionResult.trim(),
+      outcome: completionOutcome,
+      nextAction: completionNextAction.trim() || null
+    });
+    setIsSavingCompletion(false);
+    if (!saved) return;
+    setCompletionFollowUp(null);
+    setCompletionResult('');
+    setCompletionOutcome('');
+    setCompletionNextAction('');
+    setError('');
   }
 
   async function closeOpportunity() {
@@ -1739,6 +1822,21 @@ export default function SimulatorPage() {
                 <button type="button" onClick={parseQuickLeadText} disabled={!quickLeadText.trim()} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-900 dark:text-blue-300 dark:hover:bg-blue-950/40">✨ Extraer datos del mensaje</button>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm font-semibold">Tipo de cuenta
+                  <select
+                    required
+                    value={quickLeadEntityType}
+                    onChange={(event) => {
+                      const entityType = event.target.value as 'person' | 'company';
+                      setQuickLeadEntityType(entityType);
+                      if (entityType === 'person') setQuickLeadCompany('');
+                    }}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    <option value="company">Empresa</option>
+                    <option value="person">Persona física</option>
+                  </select>
+                </label>
                 <label className="text-sm font-semibold">Canal de origen
                   <select required value={quickLeadSource} onChange={(event) => setQuickLeadSource(event.target.value as (typeof leadSources)[number])} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950">
                     {leadSources.map((source) => <option key={source} value={source}>{source}</option>)}
@@ -1757,14 +1855,30 @@ export default function SimulatorPage() {
                     {requestTypes.map((requestType) => <option key={requestType.value} value={requestType.value}>{requestType.label}</option>)}
                   </select>
                 </label>
-                <label className="text-sm font-semibold">Nombre de contacto
-                  <input required value={quickLeadName} onChange={(event) => setQuickLeadName(event.target.value)} placeholder="Nombre de la persona" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
+                {quickLeadEntityType === 'company' && (
+                  <>
+                    <label className="text-sm font-semibold">Empresa
+                      <input required value={quickLeadCompany} onChange={(event) => setQuickLeadCompany(event.target.value)} placeholder="Razón social o nombre comercial" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
+                    </label>
+                    <label className="text-sm font-semibold">Relación del contacto con la empresa
+                      <select value={quickLeadContactRelationship} onChange={(event) => setQuickLeadContactRelationship(event.target.value as 'owner' | 'employee' | 'other')} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950">
+                        <option value="owner">Dueño/a</option>
+                        <option value="employee">Empleado/a</option>
+                        <option value="other">Otra relación</option>
+                      </select>
+                    </label>
+                  </>
+                )}
+                <label className="text-sm font-semibold">{quickLeadEntityType === 'company' ? 'Persona de contacto' : 'Nombre de la persona'}
+                  <input required value={quickLeadName} onChange={(event) => setQuickLeadName(event.target.value)} placeholder="Nombre y apellido" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
                 </label>
-                <label className="text-sm font-semibold">Cargo del contacto
-                  <input value={quickLeadContactTitle} onChange={(event) => setQuickLeadContactTitle(event.target.value)} placeholder="Ej. Gerente de Planta" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
-                </label>
-                <label className="text-sm font-semibold">Empresa
-                  <input value={quickLeadCompany} onChange={(event) => setQuickLeadCompany(event.target.value)} placeholder="Empresa prospecto" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
+                {quickLeadEntityType === 'company' && (
+                  <label className="text-sm font-semibold">Cargo del contacto
+                    <input value={quickLeadContactTitle} onChange={(event) => setQuickLeadContactTitle(event.target.value)} placeholder="Ej. Gerente de Planta" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
+                  </label>
+                )}
+                <label className="text-sm font-semibold">CUIT / DNI
+                  <input value={quickLeadDocumentNumber} onChange={(event) => setQuickLeadDocumentNumber(event.target.value)} maxLength={80} placeholder="Permite identificar o reutilizar la cuenta" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
                 </label>
                 <label className="text-sm font-semibold">Teléfono
                   <input type="tel" value={quickLeadPhone} onChange={(event) => setQuickLeadPhone(event.target.value)} placeholder="+54 9 ..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal dark:border-slate-700 dark:bg-slate-950" />
@@ -1793,11 +1907,48 @@ export default function SimulatorPage() {
                 </label>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
-                <p className="text-xs text-slate-500">Se creará el prospecto con su canal, campaña y clasificación, más seguimientos a 2, 7, 14, 21, 30, 45 y 60 días.</p>
+                <p className="text-xs text-slate-500">La empresa o persona queda separada de su contacto. Se propondrá una cadencia de 2, 7, 14, 21, 30, 45 y 60 días, que podrás reprogramar.</p>
                 <button type="submit" disabled={isSavingQuickLead || !token} className="rounded-lg bg-[#1E64FF] px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50">{isSavingQuickLead ? 'Creando…' : 'Crear prospecto y agendar'}</button>
               </div>
             </form>
           </section>
+        </div>
+      )}
+
+      {completionFollowUp && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4" role="presentation">
+          <form onSubmit={completeManualFollowUp} role="dialog" aria-modal="true" aria-labelledby="complete-follow-up-title" className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+            <h2 id="complete-follow-up-title" className="text-lg font-bold">Registrar resultado del contacto</h2>
+            <p className="mt-1 text-sm text-slate-500">{completionFollowUp.customer} · se actualizarán las fechas futuras de la cadencia.</p>
+            <label className="mt-4 block text-sm font-semibold">Resultado
+              <select required value={completionOutcome} onChange={(event) => setCompletionOutcome(event.target.value as ManualFollowUpOutcome | '')} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-950">
+                <option value="">Selecciona un resultado…</option>
+                <option value="contacted">Hablé con el contacto</option>
+                <option value="no_answer">No respondió / no lo ubiqué</option>
+                <option value="not_interested">Sin interés por ahora</option>
+                <option value="follow_up">Acordamos continuar</option>
+                <option value="other">Otro</option>
+              </select>
+            </label>
+            <label className="mt-3 block text-sm font-semibold">Minuta
+              <textarea required value={completionResult} onChange={(event) => setCompletionResult(event.target.value)} maxLength={10000} rows={4} placeholder="¿Qué pasó durante el contacto?" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-950" />
+            </label>
+            <label className="mt-3 block text-sm font-semibold">Próxima acción
+              <input
+                required={Boolean(completionFollowUp.cadenceId && (completionFollowUp.cadenceStep ?? 0) < 7)}
+                value={completionNextAction}
+                onChange={(event) => setCompletionNextAction(event.target.value)}
+                maxLength={2000}
+                placeholder="Ej. Enviar ficha técnica y volver a llamar"
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 font-normal dark:border-slate-700 dark:bg-slate-950"
+              />
+              <span className="mt-1 block text-xs font-normal text-slate-500">Se aplicará al próximo paso y las fechas se recalcularán desde este contacto.</span>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setCompletionFollowUp(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancelar</button>
+              <button type="submit" disabled={isSavingCompletion} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">{isSavingCompletion ? 'Guardando…' : 'Guardar y completar'}</button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -2114,15 +2265,35 @@ export default function SimulatorPage() {
                   <button type="button" onClick={() => setShowFollowUpForm(false)} aria-label="Cerrar formulario" className="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">✕</button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  <label className="text-xs font-semibold">Cliente / Empresa
-                    <input required value={followUpCustomer} onChange={(event) => setFollowUpCustomer(event.target.value)} placeholder="Nombre del contacto o empresa" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" />
+                  <label className="text-xs font-semibold">Tipo de cliente
+                    <select value={followUpEntityType} onChange={(event) => setFollowUpEntityType(event.target.value as 'person' | 'company')} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal">
+                      <option value="company">Empresa</option>
+                      <option value="person">Persona física</option>
+                    </select>
                   </label>
-                  <label className="text-xs font-semibold">Nombre del contacto
-                    <input value={followUpContactName} onChange={(event) => setFollowUpContactName(event.target.value)} placeholder="Nombre y apellido" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" />
+                  <label className="text-xs font-semibold">{followUpEntityType === 'company' ? 'Empresa' : 'Nombre y apellido'}
+                    <input required value={followUpCustomer} onChange={(event) => setFollowUpCustomer(event.target.value)} placeholder={followUpEntityType === 'company' ? 'Razón social o nombre comercial' : 'Nombre y apellido'} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" />
                   </label>
-                  <label className="text-xs font-semibold">Cargo
-                    <input value={followUpContactTitle} onChange={(event) => setFollowUpContactTitle(event.target.value)} placeholder="Ej. Gerente de Planta" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" />
+                  <label className="text-xs font-semibold">{followUpEntityType === 'company' ? 'CUIT (opcional)' : 'DNI (opcional)'}
+                    <input value={followUpDocumentNumber} onChange={(event) => setFollowUpDocumentNumber(event.target.value)} placeholder={followUpEntityType === 'company' ? '30-12345678-9' : '12.345.678'} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" />
                   </label>
+                  {followUpEntityType === 'company' && (
+                    <>
+                      <label className="text-xs font-semibold">Nombre del contacto
+                        <input required value={followUpContactName} onChange={(event) => setFollowUpContactName(event.target.value)} placeholder="Nombre y apellido" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" />
+                      </label>
+                      <label className="text-xs font-semibold">Relación con la empresa
+                        <select value={followUpContactRelationship} onChange={(event) => setFollowUpContactRelationship(event.target.value as 'owner' | 'employee' | 'other')} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal">
+                          <option value="owner">Dueño/a</option>
+                          <option value="employee">Empleado/a</option>
+                          <option value="other">Otra relación</option>
+                        </select>
+                      </label>
+                      <label className="text-xs font-semibold">Cargo
+                        <input value={followUpContactTitle} onChange={(event) => setFollowUpContactTitle(event.target.value)} placeholder="Ej. Gerente de Planta" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" />
+                      </label>
+                    </>
+                  )}
                   <label className="text-xs font-semibold">Teléfono / WhatsApp
                     <input value={followUpPhone} onChange={(event) => setFollowUpPhone(event.target.value)} type="tel" placeholder="+54 9 ..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" />
                   </label>
@@ -2137,7 +2308,9 @@ export default function SimulatorPage() {
                   </label>
                   <label className="text-xs font-semibold">Prioridad
                     <select value={followUpPriority} onChange={(event) => setFollowUpPriority(event.target.value as ManualFollowUp['priority'])} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal">
-                      <option>Alta</option><option>Media</option><option>Baja</option>
+                      <option value="Alta">Alta · compromiso o plazo cercano</option>
+                      <option value="Media">Media · seguimiento activo</option>
+                      <option value="Baja">Baja · nurturing sin urgencia</option>
                     </select>
                   </label>
                   <label className="text-xs font-semibold">Responsable
@@ -2172,6 +2345,13 @@ export default function SimulatorPage() {
                           <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isOverdue || item.status === 'lost' ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300' : item.status === 'won' || item.status === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}`}>{statusLabel}</span>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">{mounted ? new Date(item.dueAt).toLocaleString('es-AR', { dateStyle: 'full', timeStyle: 'short' }) : ''} · {item.owner} · Prioridad {item.priority}</p>
+                        {item.outcome && <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">Resultado: {({
+                          contacted: 'Hablé con el contacto',
+                          no_answer: 'No respondió / no lo ubiqué',
+                          not_interested: 'Sin interés por ahora',
+                          follow_up: 'Acordamos continuar',
+                          other: 'Otro'
+                        } satisfies Record<ManualFollowUpOutcome, string>)[item.outcome]}</p>}
                         <section aria-label={`Ficha de contacto de ${person}`} className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/60">
                           <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Ficha de contacto</p>
                           <p className="mt-1 text-sm font-semibold">{person} <span className="font-normal text-slate-500">· {title}</span></p>
@@ -2220,6 +2400,28 @@ export default function SimulatorPage() {
                         <label className="text-xs font-semibold">Email
                           <input type="email" value={item.email ?? item.lead?.email ?? ''} onChange={(event) => setManualFollowUps((current) => current.map((followUp) => followUp.id === item.id ? { ...followUp, email: event.target.value } : followUp))} onBlur={(event) => void updateManualFollowUp(item.id, { email: event.currentTarget.value })} placeholder="contacto@empresa.com" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal" />
                         </label>
+                        <label className="text-xs font-semibold">Próxima fecha
+                          <input
+                            type="datetime-local"
+                            value={editingFollowUpId === item.id ? editingFollowUpDueAt : localDateTimeValue(new Date(item.dueAt))}
+                            onChange={(event) => setEditingFollowUpDueAt(event.target.value)}
+                            onBlur={() => {
+                              const dueAt = new Date(editingFollowUpDueAt);
+                              if (Number.isFinite(dueAt.getTime()) && dueAt.getTime() !== Date.parse(item.dueAt)) {
+                                void updateManualFollowUp(item.id, {
+                                  dueAt: dueAt.toISOString(),
+                                  status: 'scheduled',
+                                  rescheduleScope
+                                });
+                              }
+                            }}
+                            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal"
+                          />
+                        </label>
+                        <label className="flex items-center gap-2 self-end text-xs font-semibold">
+                          <input type="checkbox" checked={rescheduleScope === 'cadence'} onChange={(event) => setRescheduleScope(event.target.checked ? 'cadence' : 'single')} />
+                          Mover los pasos siguientes según la cadencia
+                        </label>
                         <button type="button" onClick={() => setEditingFollowUpId('')} className="w-fit rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800">Guardar contacto</button>
                       </div>
                     )}
@@ -2234,7 +2436,12 @@ export default function SimulatorPage() {
                       />
                     </label>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <button type="button" onClick={() => setEditingFollowUpId((current) => current === item.id ? '' : item.id)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800">{editingFollowUpId === item.id ? 'Cerrar contacto' : 'Editar contacto'}</button>
+                      <button type="button" onClick={() => {
+                        const opening = editingFollowUpId !== item.id;
+                        setEditingFollowUpId(opening ? item.id : '');
+                        setEditingFollowUpDueAt(opening ? localDateTimeValue(new Date(item.dueAt)) : '');
+                        setRescheduleScope('cadence');
+                      }} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800">{editingFollowUpId === item.id ? 'Cerrar contacto' : 'Editar contacto / fecha'}</button>
                       {item.status === 'scheduled' && <>
                         {[1, 2, 7].map((days) => <button key={days} type="button" onClick={() => rescheduleManualFollowUp(item, days)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800">+{days === 1 ? '24 hs' : days === 2 ? '48 hs' : '7 días'}</button>)}
                         <button type="button" onClick={() => setManualFollowUpStatus(item, 'completed')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Completado</button>
